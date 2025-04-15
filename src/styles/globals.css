@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: .5;
+    }
+  }
+
+  /* QR Code styles */
+  .qr-rounded path {
+    border-radius: 0.5rem;
+  }
+
+  .qr-dots path {
+    border-radius: 9999px;
+  }
+}
+
+/* Custom QR styles */
+svg path {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Download button styles */
+.btn-download {
+  @apply relative overflow-hidden transition-all duration-300 flex items-center justify-center gap-2 font-medium;
+  background-size: 200% auto;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-download:hover {
+  background-position: right center;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -10px var(--btn-shadow-color);
+}
+
+.btn-download:active {
+  transform: translateY(0px);
+}
+
+.btn-download svg {
+  transition: transform 0.2s ease;
+}
+
+.btn-download:hover svg {
+  transform: translateY(-2px);
+}
+
+.gradient-blue {
+  background-image: linear-gradient(to right, #4f46e5 0%, #2563eb 50%, #4f46e5 100%);
+  --btn-shadow-color: rgb(37 99 235 / 0.5);
+}
+
+.gradient-indigo {
+  background-image: linear-gradient(to right, #6366f1 0%, #4f46e5 50%, #6366f1 100%);
+  --btn-shadow-color: rgb(99 102 241 / 0.5);
+}

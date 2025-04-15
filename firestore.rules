@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Admin access function
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Allow admin to access all documents
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /qrcodes/{qrId} {
+      allow create: if request.auth != null;
+      allow read: if true; // Allow public access to read QR codes
+      allow update: if true; // Allow public access to update scan count
+      allow delete: if request.auth != null 
+        && resource.data.userId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        isAdmin()
+      );
+      allow write: if request.auth != null && (
+        request.auth.uid == userId ||
+        isAdmin()
+      );
+    }
+
+    // Additional collections needed for admin functionality
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /subscriptions/{subId} {
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if isAdmin();
+    }
+
+    match /transactions/{transId} {
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if request.auth != null;
+      allow update, delete: if isAdmin();
+    }
+
+    match /payment_gateways/{gatewayId} {
+      allow read: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /settings/global {
+      allow read: if true;
+      allow write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /email_jobs/{jobId} {
+      // Allow creating email jobs if user is admin
+      allow create: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      
+      // Allow reading and updating jobs if user is admin
+      allow read, update: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /loginAttempts/{attempt} {
+      allow read, write: if false; // Only accessible through server
+    }
+
+    // Short URL rules
+    match /shorturls/{document} {
+      allow create: if request.auth != null 
+        && request.resource.data.userId == request.auth.uid;
+      
+      allow read: if true; // Allow public access for redirects
+      
+      allow update: if true; // Allow public updates for click counting
+      
+      allow delete: if request.auth != null 
+        && resource.data.userId == request.auth.uid;
+        
+      function isValidShortUrl() {
+        let data = request.resource.data;
+        return data.shortCode is string
+          && data.originalUrl is string
+          && data.createdAt is string
+          && data.userId is string
+          && data.clicks is number;
+      }
+    }
+  }
+}
