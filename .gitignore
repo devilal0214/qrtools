@@ -33,6 +33,8 @@ yarn-error.log*
 # firebase
 firebase-debug.log
 .firebase/
+firebase-config.json
+firebase-admin.json
 
 # IDE
 .vscode/
