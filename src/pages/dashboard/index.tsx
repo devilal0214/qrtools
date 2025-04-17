@@ -1,17 +1,17 @@
-// ...existing imports...
+import Link from 'next/link';
+import { useState, useEffect } from 'react';
 import { usePlanFeatures } from '@/hooks/usePlanFeatures';
+import DashboardLayout from '@/components/DashboardLayout';
+import Head from 'next/head';
+import AuthGuard from '@/components/AuthGuard';
 
 export default function Dashboard() {
-  const { planName, features, getRemainingQRCodes } = usePlanFeatures();
+  const { planName, features, remainingQRs } = usePlanFeatures();
   const [remaining, setRemaining] = useState<number>(0);
 
   useEffect(() => {
-    const fetchRemaining = async () => {
-      const count = await getRemainingQRCodes();
-      setRemaining(count);
-    };
-    fetchRemaining();
-  }, []);
+    setRemaining(remainingQRs);
+  }, [remainingQRs]);
 
   return (
     <DashboardLayout>

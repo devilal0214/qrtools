@@ -9,9 +9,10 @@ type AuthMode = 'signin' | 'signup' | 'forgot';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess?: () => void;  // Add optional onSuccess prop
 }
 
-export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,6 +24,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
   const handleAuthSuccess = () => {
     onClose();
+    onSuccess?.();  // Call onSuccess if provided
     router.push('/dashboard/active');
   };
 
@@ -223,10 +225,10 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   {loading ? (
                     <div className="flex items-center justify-center">
                       <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                      {mode === 'signin' ? 'Signing in...' : 'Creating account...'}
+                      {(mode === 'signin' as AuthMode) ? 'Signing in...' : 'Creating account...'}
                     </div>
                   ) : (
-                    mode === 'signin' ? 'Sign In' : 'Sign Up'
+                    (mode === 'signin' as AuthMode) ? 'Sign In' : 'Sign Up'
                   )}
                 </button>
               </form>
@@ -270,10 +272,10 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 {loading ? (
                   <div className="flex items-center justify-center">
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                    {mode === 'signin' ? 'Signing in...' : 'Creating account...'}
+                    {(mode === 'signin' as AuthMode) ? 'Signing in...' : 'Creating account...'}
                   </div>
                 ) : (
-                  mode === 'signin' ? 'Sign In' : 'Sign Up'
+                  (mode === 'signin' as AuthMode) ? 'Sign In' : 'Sign Up'
                 )}
               </button>
             </form>

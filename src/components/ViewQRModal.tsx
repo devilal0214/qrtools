@@ -2,17 +2,20 @@ import QRCode from 'react-qr-code';
 import Link from 'next/link';
 import { useState } from 'react';
 
-interface ViewQRModalProps {
-  qrCode: {
-    id: string;
-    content: string;
-    settings?: {
-      size?: number;
-      fgColor?: string;
-      bgColor?: string;
-      shape?: string;
-    };
+interface QRCodeData {
+  id: string;
+  type: string;  // Add type property
+  content: string;
+  settings?: {
+    size?: number;
+    fgColor?: string;
+    bgColor?: string;
+    shape?: string;
   };
+}
+
+interface ViewQRModalProps {
+  qrCode: QRCodeData;
   onClose: () => void;
 }
 

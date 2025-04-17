@@ -3,7 +3,11 @@ import { usePlanFeatures } from '@/hooks/usePlanFeatures';
 import Link from 'next/link';
 import { QR_CONTENT_TYPES } from '@/types/admin';
 
-export default function CreateQRModal({ onClose }: { onClose: () => void }) {
+interface CreateQRModalProps {
+  onClose: () => void;
+}
+
+export default function CreateQRModal({ onClose }: CreateQRModalProps) {
   const { planName, canUseContentType, enabledContentTypes } = usePlanFeatures();
   const [selectedType, setSelectedType] = useState('');
   const [error, setError] = useState('');

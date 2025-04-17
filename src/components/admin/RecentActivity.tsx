@@ -45,13 +45,15 @@ export function RecentActivity() {
         );
         
         const subsSnapshot = await getDocs(subsQuery);
-        const subActivities = await Promise.all(subsSnapshot.docs.map(async (doc) => {
-          const subData = doc.data();
-          const userDoc = await getDoc(doc(db, 'users', subData.userId));
+        const subActivities = await Promise.all(subsSnapshot.docs.map(async (docSnapshot) => {
+          const subData = docSnapshot.data();
+          // Fix: Use doc() correctly by passing reference path parts separately
+          const userDocRef = doc(db, 'users', subData.userId);
+          const userDoc = await getDoc(userDocRef);
           const userData = userDoc.data();
           
           return {
-            id: doc.id,
+            id: docSnapshot.id,
             type: 'subscription',
             description: `${userData?.email || 'A user'} subscribed to ${subData.plan}`,
             createdAt: subData.createdAt,

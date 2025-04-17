@@ -18,7 +18,7 @@ export const db = getFirestore(app);
 
 // Only enable persistence on client side and handle it properly
 if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db, { synchronizeTabs: true })
+  enableIndexedDbPersistence(db)
     .catch((err) => {
       if (err.code === 'failed-precondition') {
         console.log('Persistence failed: Multiple tabs open');

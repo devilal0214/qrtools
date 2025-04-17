@@ -1,11 +1,11 @@
 import Stripe from 'stripe';
 import Razorpay from 'razorpay';
 import { loadScript } from '@paypal/paypal-js';
-import CCAvenue from 'ccavenue-node';
+import { CCAvenuePayment } from './payments/ccavenue';
 
 // Initialize Stripe with your secret key
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16', // Use the latest API version
+  apiVersion: '2025-03-31.basil' // Update API version to match Stripe's requirement
 });
 
 // Initialize Razorpay
@@ -14,12 +14,20 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET!
 });
 
-// Initialize CCAvenue
-const ccav = new CCAvenue({
-  merchant_id: process.env.CCAVENUE_MERCHANT_ID!,
-  working_key: process.env.CCAVENUE_WORKING_KEY!,
-  access_code: process.env.CCAVENUE_ACCESS_CODE!
-});
+// Custom CCAvenue payment handling
+interface CCAvenueConfig {
+  merchantId: string;
+  workingKey: string;
+  accessCode: string;
+}
+
+const ccavenueConfig: CCAvenueConfig = {
+  merchantId: process.env.CCAVENUE_MERCHANT_ID!,
+  workingKey: process.env.CCAVENUE_WORKING_KEY!,
+  accessCode: process.env.CCAVENUE_ACCESS_CODE!
+};
+
+const ccavenue = new CCAvenuePayment(ccavenueConfig);
 
 // Payment Gateway Factory
 export const getPaymentGateway = (gateway: 'stripe' | 'razorpay' | 'paypal' | 'ccavenue') => {
@@ -37,7 +45,7 @@ export const getPaymentGateway = (gateway: 'stripe' | 'razorpay' | 'paypal' | 'c
         }
       };
     case 'ccavenue':
-      return ccav;
+      return ccavenue;
     default:
       return stripe;
   }
@@ -115,15 +123,7 @@ export const createPaymentSession = async ({
         });
 
       case 'ccavenue':
-        return ccav.getEncryptedOrder({
-          order_id: orderId,
-          amount: amount.toString(),
-          currency,
-          redirect_url: successUrl,
-          cancel_url: cancelUrl,
-          merchant_param1: userId,
-          merchant_param2: planId
-        });
+        return ccavenueConfig;
 
       case 'paypal':
         // PayPal is handled client-side
@@ -133,7 +133,7 @@ export const createPaymentSession = async ({
         return createCheckoutSession({
           priceId: planId,
           userId,
-          orderId,
+          planId,
           successUrl,
           cancelUrl
         });

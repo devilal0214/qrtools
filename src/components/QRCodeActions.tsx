@@ -1,32 +1,38 @@
+import { useRouter } from 'next/router';
 import { usePlanFeatures } from '@/hooks/usePlanFeatures';
-// ...existing imports...
+import type { QRCode } from '@/types/qr';  // Update import to use type import
+import toast from 'react-hot-toast';
 
-export default function QRCodeActions({ qrCode }) {
-  const { canUseFeature, canCreateMoreQR } = usePlanFeatures();
+interface QRCodeActionsProps {
+  qrCode: QRCode;
+  onEdit: (qrCode: QRCode) => void;
+  onDelete: (id: string) => void;
+  onPauseResume?: (id: string) => void;
+}
 
-  const handleCreate = () => {
-    if (!canCreateMoreQR()) {
-      toast.error("You've reached your daily QR code limit. Please upgrade your plan.");
-      router.push('/dashboard/plans');
-      return;
-    }
-    // ... rest of create logic
+const QRCodeActions = ({ qrCode, onEdit, onDelete, onPauseResume }: QRCodeActionsProps) => {
+  const { canUseFeature } = usePlanFeatures();
+  const router = useRouter();
+
+  const handleEdit = (qrCode: QRCode) => {
+    onEdit(qrCode);
   };
 
-  // ...existing state...
+  const handleDelete = async (id: string) => {
+    if (confirm('Are you sure you want to delete this QR code?')) {
+      onDelete(id);
+    }
+  };
+
+  const handlePauseResume = async (id: string) => {
+    if (onPauseResume) {
+      onPauseResume(id);
+    }
+  };
 
   return (
-    <div className="flex gap-2">
-      {canUseFeature('analytics') && (
-        <button
-          onClick={() => handleAnalytics(qrCode.id)}
-          className="text-blue-600 hover:text-blue-700"
-        >
-          Analytics
-        </button>
-      )}
-
-      {canUseFeature('pauseResume') && (
+    <div className="flex items-center gap-4">
+      {canUseFeature('pauseResume') && onPauseResume && (
         <button
           onClick={() => handlePauseResume(qrCode.id)}
           className="text-yellow-600 hover:text-yellow-700"
@@ -35,7 +41,6 @@ export default function QRCodeActions({ qrCode }) {
         </button>
       )}
 
-      {/* Other actions that are always available */}
       <button
         onClick={() => handleEdit(qrCode)}
         className="text-gray-600 hover:text-gray-700"
@@ -51,4 +56,6 @@ export default function QRCodeActions({ qrCode }) {
       </button>
     </div>
   );
-}
+};
+
+export default QRCodeActions;

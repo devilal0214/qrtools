@@ -3,7 +3,20 @@ import Head from 'next/head';
 import { useAuth } from '@/hooks/useAuth';
 import AuthModal from '@/components/AuthModal';
 
-const unitTypes = {
+// Add type definitions at the top
+interface UnitConversion {
+  [key: string]: number;
+}
+
+interface UnitTypes {
+  length: UnitConversion;
+  weight: UnitConversion;
+  temperature: {
+    [key: string]: string;
+  };
+}
+
+const unitTypes: UnitTypes = {
   length: {
     meters: 1,
     kilometers: 0.001,
@@ -64,7 +77,7 @@ export default function UnitConverter() {
 
   const convertAll = () => {
     if (!value) return {};
-    const results = {};
+    const results: { [key: string]: string } = {};
     const inputValue = Number(value);
 
     if (type === 'temperature') {
@@ -75,10 +88,11 @@ export default function UnitConverter() {
         }
       });
     } else {
-      const baseValue = inputValue / unitTypes[type][fromUnit];
-      Object.entries(unitTypes[type]).forEach(([unit, conversion]) => {
+      const conversion = unitTypes[type as keyof UnitTypes] as UnitConversion;
+      const baseValue = inputValue / conversion[fromUnit];
+      Object.entries(conversion).forEach(([unit, factor]) => {
         if (unit !== fromUnit) {
-          results[unit] = (baseValue * conversion).toFixed(4);
+          results[unit] = (baseValue * factor).toFixed(4);
         }
       });
     }

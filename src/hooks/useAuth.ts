@@ -114,3 +114,16 @@ export function useClickOutside(ref: React.RefObject<HTMLElement>, handler: () =
     return () => document.removeEventListener('mousedown', listener);
   }, [ref, handler]);
 }
+
+// Add this test helper method
+export const testAuthFlow = async () => {
+  try {
+    // Test email/password sign in
+    const testResult = await signInWithEmailAndPassword(auth, 'test@example.com', 'password');
+    console.log('Auth test result:', testResult);
+    return true;
+  } catch (error) {
+    console.error('Auth test failed:', error);
+    return false;
+  }
+};

@@ -3,28 +3,19 @@ import AdminLayout from '@/components/AdminLayout';
 import Head from 'next/head';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Plan } from '@/types/admin';
+import { Plan as PlanType } from '@/types/admin';
 import AddEditPlanModal from '@/components/admin/AddEditPlanModal';
 
-interface Plan {
-  name: string;
-  price: number;
-  features: {
-    qrLimit: number;
-    analytics: boolean;
-    customization: boolean;
-    dynamic: boolean;
-    pauseResume: boolean;
-  };
-  enabledContentTypes: string[];
-  isActive: boolean;
+interface PlanModalData {
+  isOpen: boolean;
+  plan: PlanType | null;
 }
 
-export default function AdminPlans() {
-  const [plans, setPlans] = useState<Plan[]>([]);
+export default function PlansPage() {
+  const [plans, setPlans] = useState<PlanType[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<PlanType | null>(null);
 
   useEffect(() => {
     fetchPlans();
@@ -36,7 +27,7 @@ export default function AdminPlans() {
       const plansData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      })) as Plan[];
+      })) as PlanType[];
       setPlans(plansData);
     } catch (error) {
       console.error('Error fetching plans:', error);
@@ -45,7 +36,7 @@ export default function AdminPlans() {
     }
   };
 
-  const handleSavePlan = async (planData: Plan) => {
+  const handleSavePlan = async (planData: PlanType) => {
     try {
       if (planData.name === 'Free') {
         planData.enabledContentTypes = ['URL', 'CONTACT']; // Default free plan types
@@ -63,7 +54,7 @@ export default function AdminPlans() {
     }
   };
 
-  const addPlan = async (planData: Partial<Plan>) => {
+  const addPlan = async (planData: Partial<PlanType>) => {
     try {
       await addDoc(collection(db, 'plans'), {
         ...planData,
@@ -76,7 +67,7 @@ export default function AdminPlans() {
     }
   };
 
-  const updatePlan = async (id: string, planData: Partial<Plan>) => {
+  const updatePlan = async (id: string, planData: Partial<PlanType>) => {
     try {
       await updateDoc(doc(db, 'plans', id), {
         ...planData,

@@ -1,19 +1,22 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { decryptResponse } from '@/utils/payments/ccavenue';
+import { decryptData } from '@/utils/payments/ccavenue';
 import { db } from '@/lib/firebase-admin';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ message: 'Method not allowed' });
   }
 
   try {
     const { encResp } = req.body;
-    const workingKey = process.env.CCAVENUE_WORKING_KEY!;
+    const workingKey = process.env.CCAVENUE_WORKING_KEY;
 
-    // Decrypt the response
-    const decryptedResponse = decryptResponse(encResp, workingKey);
-    const responseParams = new URLSearchParams(decryptedResponse);
+    if (!workingKey || !encResp) {
+      return res.status(400).json({ message: 'Missing required parameters' });
+    }
+
+    const decryptedData = decryptData(encResp, workingKey);
+    const responseParams = new URLSearchParams(decryptedData);
     
     const orderId = responseParams.get('order_id');
     const orderStatus = responseParams.get('order_status');
@@ -24,14 +27,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       throw new Error('Invalid response parameters');
     }
 
-    // Update order status in Firestore
     await db.collection('orders').doc(orderId).update({
       status: orderStatus.toLowerCase(),
       updatedAt: new Date().toISOString(),
       paymentDetails: Object.fromEntries(responseParams)
     });
 
-    // If payment successful, update user subscription
     if (orderStatus === 'Success') {
       await db.collection('subscriptions').add({
         userId,
@@ -40,12 +41,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         orderId,
         createdAt: new Date().toISOString(),
         startDate: new Date().toISOString(),
-        // Add 30 days to current date
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
       });
     }
 
-    // Redirect based on status
     const redirectUrl = orderStatus === 'Success'
       ? '/payment/success'
       : '/payment/failure';
@@ -53,6 +52,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.redirect(302, `${redirectUrl}?orderId=${orderId}`);
   } catch (error) {
     console.error('CCAvenue response error:', error);
-    res.redirect(302, '/payment/failure');
+    return res.status(500).json({ message: 'Failed to process payment response' });
   }
 }

@@ -6,6 +6,14 @@ import { signOut as firebaseSignOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/router';
 
+interface MenuItem {
+  name: string;
+  href: string;
+  icon: JSX.Element;
+  requiresAuth?: boolean;
+  public?: boolean;
+}
+
 export default function Navigation() {
   const { user } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -45,7 +53,7 @@ export default function Navigation() {
     }
   };
 
-  const menuItems = [
+  const menuItems: MenuItem[] = [
     {
       name: 'QR Generator',
       href: '/',
@@ -109,22 +117,20 @@ export default function Navigation() {
             </Link>
             
             <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-              {menuItems
-                .filter(item => (item.showOnlyWhenAuth ? user : true))
-                .map(item => (
-                  <button
-                    key={item.href}
-                    onClick={() => item.requiresAuth ? handleProtectedLink(item.href) : router.push(item.href)}
-                    className={`inline-flex items-center px-1 pt-1 border-b-2 transition-colors
-                      ${router.pathname === item.href
-                        ? 'border-blue-600 text-blue-600'
-                        : 'border-transparent text-gray-900 hover:text-blue-600 hover:border-blue-300'
-                      }
-                    `}
-                  >
-                    {item.icon}
-                    <span className="ml-2">{item.name}</span>
-                  </button>
+              {menuItems.map(item => (
+                <button
+                  key={item.href}
+                  onClick={() => item.requiresAuth ? handleProtectedLink(item.href) : router.push(item.href)}
+                  className={`inline-flex items-center px-1 pt-1 border-b-2 transition-colors
+                    ${router.pathname === item.href
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-900 hover:text-blue-600 hover:border-blue-300'
+                    }
+                  `}
+                >
+                  {item.icon}
+                  <span className="ml-2">{item.name}</span>
+                </button>
               ))}
             </div>
           </div>
@@ -186,22 +192,20 @@ export default function Navigation() {
       {/* Mobile menu */}
       <div className="sm:hidden">
         <div className="px-2 pt-2 pb-3 space-y-1">
-          {menuItems
-            .filter(item => (item.showOnlyWhenAuth ? user : true))
-            .map(item => (
-              <button
-                key={item.href}
-                onClick={() => item.requiresAuth ? handleProtectedLink(item.href) : router.push(item.href)}
-                className={`block w-full text-left px-3 py-2 rounded-md text-base font-medium
-                  ${router.pathname === item.href
-                    ? 'bg-blue-50 text-blue-600'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
-                  }
-                `}
-              >
-                {item.icon}
-                <span className="ml-2">{item.name}</span>
-              </button>
+          {menuItems.map(item => (
+            <button
+              key={item.href}
+              onClick={() => item.requiresAuth ? handleProtectedLink(item.href) : router.push(item.href)}
+              className={`block w-full text-left px-3 py-2 rounded-md text-base font-medium
+                ${router.pathname === item.href
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                }
+              `}
+            >
+              {item.icon}
+              <span className="ml-2">{item.name}</span>
+            </button>
           ))}
         </div>
       </div>

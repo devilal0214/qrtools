@@ -1,14 +1,44 @@
 import crypto from 'crypto';
 
-interface CCAvenueParams {
+export interface CCAvenueParams {
   orderId: string;
   amount: number;
-  currency: string;
+  currency?: string;
   userId: string;
   planId: string;
-  successUrl: string;
+  redirectUrl: string;  // Used for success URL
   cancelUrl: string;
 }
+
+class CCAvenue {
+  private merchantId: string;
+  private accessCode: string;
+  private workingKey: string;
+
+  constructor() {
+    this.merchantId = process.env.CCAVENUE_MERCHANT_ID!;
+    this.accessCode = process.env.CCAVENUE_ACCESS_CODE!;
+    this.workingKey = process.env.CCAVENUE_WORKING_KEY!;
+  }
+
+  isConfigured(): boolean {
+    return !!(this.merchantId && this.accessCode && this.workingKey);
+  }
+
+  async createSession(params: CCAvenueParams) {
+    // CCAvenue session creation logic
+    return {
+      url: 'https://secure.ccavenue.com/transaction/transaction.do',
+      params: {
+        merchant_id: this.merchantId,
+        access_code: this.accessCode,
+        // ... other required parameters
+      }
+    };
+  }
+}
+
+export const ccavenue = new CCAvenue();
 
 export const createCCAvenueSession = async ({
   orderId,
@@ -16,7 +46,7 @@ export const createCCAvenueSession = async ({
   currency,
   userId,
   planId,
-  successUrl,
+  redirectUrl,  // Changed from successUrl
   cancelUrl
 }: CCAvenueParams) => {
   const merchantId = process.env.CCAVENUE_MERCHANT_ID!;
@@ -33,7 +63,7 @@ export const createCCAvenueSession = async ({
     order_id: orderId,
     currency,
     amount: amount.toFixed(2),
-    redirect_url: successUrl,
+    redirect_url: redirectUrl,  // Changed from successUrl
     cancel_url: cancelUrl,
     merchant_param1: userId,
     merchant_param2: planId,

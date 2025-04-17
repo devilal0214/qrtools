@@ -6,17 +6,20 @@ import { useAuth } from '@/hooks/useAuth';
 import AuthModal from '@/components/AuthModal';
 import { loadStripe } from '@stripe/stripe-js';
 import { loadPayPalScript, createPayPalOrder } from '@/lib/paypal';
+import { useRouter } from 'next/router';
 
 // Initialize Stripe outside component
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 export default function Pricing() {
+  const router = useRouter();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const { user } = useAuth();
   const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
+  const [error, setError] = useState(''); // Add error state
 
   useEffect(() => {
     fetchPlans();
@@ -85,6 +88,7 @@ export default function Pricing() {
 
     try {
       setLoading(true);
+      setError(''); // Clear previous errors
 
       if (gateway === 'paypal') {
         const paypal = await loadPayPalScript();
@@ -209,6 +213,16 @@ export default function Pricing() {
     }
   };
 
+  useEffect(() => {
+    if (window.paypal) {
+      window.paypal.Buttons({
+        onApprove: async (data, actions) => {
+          router.push('/payment/success');
+        }
+      }).render('#paypal-button-container');
+    }
+  }, [selectedPlan]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* ...header and navigation... */}
@@ -220,6 +234,12 @@ export default function Pricing() {
             Select the perfect plan for your QR code needs
           </p>
         </div>
+
+        {error && (
+          <div className="text-red-600 bg-red-50 p-4 rounded-lg mb-4">
+            {error}
+          </div>
+        )}
 
         {loading ? (
           <div className="grid md:grid-cols-3 gap-8 animate-pulse">
@@ -297,6 +317,7 @@ export default function Pricing() {
 
       {showAuthModal && (
         <AuthModal
+          isOpen={showAuthModal}
           onClose={() => setShowAuthModal(false)}
           onSuccess={() => {
             setShowAuthModal(false);

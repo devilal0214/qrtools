@@ -13,6 +13,15 @@ const currencies = {
   INR: 'Indian Rupee'
 };
 
+// Add type definitions
+interface ConversionResults {
+  [key: string]: string;
+}
+
+interface ExchangeRates {
+  [key: string]: number;
+}
+
 export default function CurrencyConverter() {
   const { user, loading: authLoading } = useAuth();  // Add loading state
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -20,7 +29,7 @@ export default function CurrencyConverter() {
   const [from, setFrom] = useState('USD');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [rates, setRates] = useState(null);
+  const [rates, setRates] = useState<ExchangeRates | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -56,10 +65,10 @@ export default function CurrencyConverter() {
     }
   };
 
-  const convertAll = () => {
+  const convertAll = (): ConversionResults => {
     if (!rates || !amount) return {};
     const baseAmount = Number(amount);
-    const results = {};
+    const results: ConversionResults = {};
     
     Object.keys(currencies).forEach(currency => {
       if (currency !== from) {

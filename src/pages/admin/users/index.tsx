@@ -35,6 +35,7 @@ export default function AdminUsers() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
   const router = useRouter();
+  const [error, setError] = useState(''); // Add error state
 
   useEffect(() => {
     fetchUsers();
@@ -277,6 +278,12 @@ export default function AdminUsers() {
             />
           </div>
         </div>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4">
+            {error}
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-12">

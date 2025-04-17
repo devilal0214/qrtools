@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import QRCode from 'react-qr-code';
+import QRCode, { QRCodeProps } from 'react-qr-code';
 import Head from 'next/head';
 import AuthModal from '@/components/AuthModal';
 import { useAuth } from '@/hooks/useAuth';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useRouter } from 'next/router';
-import { ContentTypes } from '@/types/qr';
+import { ContentType, ContentTypes } from '@/types/qr';
 import { PlaceAutocomplete } from '@/components/PlaceAutocomplete';
 import { uploadFile } from '@/utils/fileUpload';
 import FileUploadBox from '@/components/FileUploadBox';
@@ -126,7 +126,7 @@ export default function Home() {
   const [bgColor, setBgColor] = useState('#FFFFFF');
   const [fgColor, setFgColor] = useState('#000000');
   const [downloadHeight, setDownloadHeight] = useState(1024);
-  const qrRef = useRef<SVGSVGElement>(null);
+  const qrRef = useRef<QRCode & SVGSVGElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [style, setStyle] = useState({
@@ -175,7 +175,7 @@ export default function Home() {
       shape: 'square',
     });
     setError('');
-    setContentType(ContentTypes.TEXT);
+    setContentType(ContentTypes.PLAIN_TEXT);
     setContactInfo({
       prefix: '',
       firstName: '',

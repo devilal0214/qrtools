@@ -2,6 +2,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import Razorpay from 'razorpay';
 import { loadScript } from '@paypal/paypal-js';
 import { createCCAvenueSession } from './ccavenue';
+import { initializePayPal } from './paypal';
 
 const stripe = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
@@ -44,9 +45,7 @@ export const initializePayment = async ({
         });
 
       case 'paypal':
-        return await loadScript({ 
-          'client-id': process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!
-        });
+        return await initializePayPal({ currency: 'USD' });
 
       case 'ccavenue':
         return await createCCAvenueSession({
@@ -64,5 +63,25 @@ export const initializePayment = async ({
   } catch (error) {
     console.error('Payment initialization error:', error);
     throw error;
+  }
+};
+
+// Add test method
+export const testPaymentFlow = async () => {
+  try {
+    const testPayment = await initializePayment({
+      gateway: 'stripe',
+      amount: 100,
+      orderId: 'test-order',
+      userId: 'test-user',
+      planId: 'test-plan',
+      successUrl: 'http://localhost:3000/success',
+      cancelUrl: 'http://localhost:3000/cancel'
+    });
+    console.log('Payment test result:', testPayment);
+    return true;
+  } catch (error) {
+    console.error('Payment test failed:', error);
+    return false;
   }
 };

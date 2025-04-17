@@ -1,9 +1,18 @@
 import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc as firestoreDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
+
+interface Subscription {
+  id: string;
+  planId: string;
+  userId: string;
+  status: string;
+  createdAt: string;
+  endDate?: string;
+}
 
 export default function MyPlans() {
   const [subscriptions, setSubscriptions] = useState([]);
@@ -28,7 +37,8 @@ export default function MyPlans() {
         const sub = doc.data();
         
         // Get plan details
-        const planDoc = await getDocs(doc(db, 'plans', sub.planId));
+        const planRef = firestoreDoc(db, 'plans', sub.planId);
+        const planDoc = await getDoc(planRef);
         const planData = planDoc.data();
         
         // Get QR code count
@@ -139,3 +149,22 @@ export default function MyPlans() {
     </DashboardLayout>
   );
 }
+
+const fetchSubscriptionData = async (userId: string) => {
+  try {
+    const subsSnapshot = await getDocs(collection(db, 'subscriptions'));
+    const subscriptions = subsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Subscription[];
+
+    for (const sub of subscriptions) {
+      const planRef = firestoreDoc(db, 'plans', sub.planId);
+      const planDoc = await getDoc(planRef);
+      const planData = planDoc.data();
+      // ...rest of the function
+    }
+  } catch (error) {
+    console.error('Error fetching subscription data:', error);
+  }
+};

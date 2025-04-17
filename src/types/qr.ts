@@ -1,17 +1,18 @@
-export enum ContentTypes {
-  PLAIN_TEXT = 'PLAIN_TEXT',
-  URL = 'URL',
-  MULTI_URL = 'MULTI_URL',
-  PDF = 'PDF',
-  FILE = 'FILE',
-  CONTACT = 'CONTACT',
-  SMS = 'SMS',
-  PHONE = 'PHONE',
-  LOCATION = 'LOCATION',
-  SOCIALS = 'SOCIALS'
-}
+export const ContentTypes = {
+  PLAIN_TEXT: 'PLAIN_TEXT',
+  TEXT: 'TEXT',  // Add TEXT type
+  URL: 'URL',
+  MULTI_URL: 'MULTI_URL',
+  CONTACT: 'CONTACT',
+  SMS: 'SMS',
+  PHONE: 'PHONE',
+  LOCATION: 'LOCATION',
+  PDF: 'PDF',
+  FILE: 'FILE',
+  SOCIALS: 'SOCIALS'
+} as const;
 
-export type ContentType = keyof typeof ContentTypes;
+export type ContentType = typeof ContentTypes[keyof typeof ContentTypes];
 
 export interface SocialLinks {
   facebook?: string;
@@ -21,4 +22,20 @@ export interface SocialLinks {
   linkedin?: string;
   spotify?: string;
   youtube?: string;
+}
+
+export interface QRCode {
+  id: string;
+  title?: string;
+  type: string;
+  content: string;
+  createdAt: string;
+  scans: number;
+  isActive: boolean;
+  settings?: {
+    size?: number;
+    fgColor?: string;
+    bgColor?: string;
+    shape?: string;
+  };
 }

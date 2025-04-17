@@ -1,34 +1,20 @@
-import { loadScript } from '@paypal/paypal-js';
+import { loadScript, PayPalScriptOptions } from '@paypal/paypal-js';
 
-export const createPayPalSession = async ({
-  amount,
-  currency,
-  orderId,
-  successUrl,
-  cancelUrl
-}: {
+export interface PayPalConfig {
   amount: number;
-  currency: string;
-  orderId: string;
-  successUrl: string;
-  cancelUrl: string;
-}) => {
-  try {
-    const paypal = await loadScript({
-      'client-id': process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!,
-      currency
-    });
+  currency?: string;
+}
 
-    return {
-      amount,
-      currency,
-      orderId,
-      successUrl,
-      cancelUrl,
-      clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID
+export const initializePayPal = async ({ currency = 'USD' }: Partial<PayPalConfig> = {}) => {
+  try {
+    const scriptOptions: PayPalScriptOptions = {
+      clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID!,
+      currency
     };
+
+    return await loadScript(scriptOptions);
   } catch (error) {
-    console.error('PayPal initialization failed:', error);
+    console.error('PayPal initialization error:', error);
     throw error;
   }
 };

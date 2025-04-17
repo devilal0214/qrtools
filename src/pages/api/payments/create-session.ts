@@ -6,7 +6,7 @@ import { createCCAvenueSession } from '@/lib/ccavenue';
 
 // Initialize payment gateways
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16'
+  apiVersion: '2023-10-16' as Stripe.LatestApiVersion
 });
 
 const razorpay = new Razorpay({
@@ -74,15 +74,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         break;
 
       case 'ccavenue':
-        session = await createCCAvenueSession({
+        const ccavenueSession = await createCCAvenueSession({
           orderId,
           amount,
           currency,
           userId,
           planId,
-          successUrl: `${req.headers.origin}/payment/success`,
+          redirectUrl: `${req.headers.origin}/payment/success`, // Changed from successUrl
           cancelUrl: `${req.headers.origin}/payment/cancel`
         });
+        session = ccavenueSession;
         break;
 
       default:

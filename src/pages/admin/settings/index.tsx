@@ -13,97 +13,80 @@ const ReactQuill = dynamic(() => import('react-quill'), {
 });
 import 'react-quill/dist/quill.snow.css';
 
-interface Settings {
-  smtp: {
-    host: string;
-    port: number;
-    secure: boolean;
-    auth: {
-      user: string;
-      pass: string;
-    };
-    fromEmail: string;
-    fromName: string;
+// Define proper interfaces for settings
+interface SMTPConfig {
+  host: string;
+  port: number;
+  auth: {
+    user: string;
+    pass: string;
   };
-  emailNotifications: {
-    [key: string]: {
-      enabled: boolean;
-      subject: string;
-      content: string;
-    };
-  };
-  security: SecuritySettings;
+  secure: boolean;
+  fromName: string;
+  fromEmail: string;
 }
 
-interface SecuritySettings {
-  loginAttempts: {
-    maxAttempts: number;
-    blockDuration: number;
-    enabled: boolean;
-  };
-  passwordPolicy: {
-    minLength: number;
-    requireUppercase: boolean;
-    requireLowercase: boolean;
-    requireNumbers: boolean;
-    requireSpecialChars: boolean;
-  };
-  sessionTimeout: number;
-  ipWhitelist: string[];
-  adminIpRestriction: boolean;
+interface EmailTemplate {
+  enabled: boolean;
+  subject: string;
+  content: string;
 }
 
-export default function AdminSettings() {
-  const [settings, setSettings] = useState<Settings>({
+interface EmailConfig {
+  enabled: boolean;
+  fromEmail: string;
+  templates: {
+    [key: string]: EmailTemplate;
+  };
+}
+
+interface SecurityConfig {
+  maxLoginAttempts: number;
+  lockoutDuration: number;
+}
+
+interface QRLimits {
+  maxDailyQRFree: number;
+  maxDailyQRPro: number;
+  maxDailyQRBusiness: number;
+}
+
+interface GlobalSettings extends QRLimits {
+  smtp: SMTPConfig;
+  emailNotifications: EmailConfig;
+  security: SecurityConfig;
+}
+
+export default function AdminSettingsPage() {
+  const [settings, setSettings] = useState<GlobalSettings>({
     smtp: {
       host: '',
       port: 587,
-      secure: true,
-      auth: { user: '', pass: '' },
-      fromEmail: '',
-      fromName: ''
+      auth: {
+        user: '',
+        pass: ''
+      },
+      secure: false,
+      fromName: '',
+      fromEmail: ''
     },
-    emailNotifications: Object.keys(EMAIL_TEMPLATES).reduce((acc, key) => ({
-      ...acc,
-      [key.toLowerCase()]: {
-        enabled: false,
-        subject: EMAIL_TEMPLATES[key].subject,
-        content: EMAIL_TEMPLATES[key].defaultContent
-      }
-    }), {}),
+    emailNotifications: {
+      enabled: false,
+      fromEmail: '',
+      templates: {}
+    },
     security: {
-      loginAttempts: {
-        maxAttempts: 5,
-        blockDuration: 30,
-        enabled: true
-      },
-      passwordPolicy: {
-        minLength: 8,
-        requireUppercase: true,
-        requireLowercase: true,
-        requireNumbers: true,
-        requireSpecialChars: true
-      },
-      sessionTimeout: 60,
-      ipWhitelist: [],
-      adminIpRestriction: false
-    }
+      maxLoginAttempts: 5,
+      lockoutDuration: 15
+    },
+    maxDailyQRFree: 3,
+    maxDailyQRPro: 25,
+    maxDailyQRBusiness: 100
   });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
 
-  // Add new test SMTP state
-  const [testSmtp, setTestSmtp] = useState({
-    host: '',
-    port: 587,
-    secure: true,
-    auth: { user: '', pass: '' },
-    fromEmail: '',
-    fromName: ''
-  });
-  const [testLoading, setTestLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     fetchSettings();
@@ -111,39 +94,43 @@ export default function AdminSettings() {
 
   const fetchSettings = async () => {
     try {
-      const docRef = doc(db, 'settings', 'global');
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        setSettings(docSnap.data() as Settings);
+      const settingsDoc = await getDoc(doc(db, 'settings', 'global'));
+      if (settingsDoc.exists()) {
+        setSettings(settingsDoc.data() as GlobalSettings);
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
-      setError('Failed to load settings');
-    } finally {
-      setLoading(false);
+      setError('Failed to fetch settings');
     }
   };
 
   const saveSettings = async () => {
-    if (!settings) return;
-
-    setSaving(true);
+    setLoading(true);
     setError('');
     setSuccess('');
 
     try {
-      await updateDoc(doc(db, 'settings', 'global'), settings);
+      const flattenedSettings = {
+        smtp: settings.smtp,
+        emailNotifications: settings.emailNotifications,
+        security: settings.security,
+        maxDailyQRFree: settings.maxDailyQRFree,
+        maxDailyQRPro: settings.maxDailyQRPro,
+        maxDailyQRBusiness: settings.maxDailyQRBusiness
+      };
+
+      await updateDoc(doc(db, 'settings', 'global'), flattenedSettings);
       setSuccess('Settings saved successfully!');
     } catch (error) {
       console.error('Error saving settings:', error);
       setError('Failed to save settings');
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
   const handleSaveSmtp = async () => {
-    setSaving(true);
+    setLoading(true);
     setError('');
     setSuccess('');
 
@@ -173,20 +160,20 @@ export default function AdminSettings() {
       console.error('Error saving SMTP:', error);
       setError('Failed to save SMTP settings');
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
   const testEmailConfig = async () => {
     try {
-      setTestLoading(true);
+      setLoading(true);
       setError('');
       setSuccess('');
 
       const response = await fetch('/api/admin/test-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(testSmtp)
+        body: JSON.stringify(settings.smtp)
       });
 
       const data = await response.json();
@@ -200,7 +187,7 @@ export default function AdminSettings() {
       console.error('Test email error:', error);
       setError(`Failed to send test email: ${error.message}`);
     } finally {
-      setTestLoading(false);
+      setLoading(false);
     }
   };
 
@@ -300,19 +287,21 @@ export default function AdminSettings() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Username</label>
+                    <label className="block text-sm font-medium text-gray-700">SMTP Username</label>
                     <input
                       type="text"
                       value={settings.smtp.auth.user}
                       onChange={(e) => setSettings(prev => ({
                         ...prev,
-                        smtp: { 
-                          ...prev.smtp, 
-                          auth: { ...prev.smtp.auth, user: e.target.value }
+                        smtp: {
+                          ...prev.smtp,
+                          auth: {
+                            ...prev.smtp.auth,
+                            user: e.target.value
+                          }
                         }
                       }))}
-                      className="mt-1 w-full px-3 py-2 border rounded-lg"
-                      placeholder="your@email.com"
+                      className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                   <div>
@@ -350,10 +339,10 @@ export default function AdminSettings() {
 
                 <button
                   onClick={handleSaveSmtp}
-                  disabled={saving}
+                  disabled={loading}
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {saving ? 'Saving...' : 'Save SMTP Settings'}
+                  {loading ? 'Saving...' : 'Save SMTP Settings'}
                 </button>
               </div>
             </div>
@@ -367,10 +356,10 @@ export default function AdminSettings() {
                     <label className="block text-sm font-medium text-gray-700">Test SMTP Host</label>
                     <input
                       type="text"
-                      value={testSmtp.host}
-                      onChange={(e) => setTestSmtp(prev => ({
+                      value={settings.smtp.host}
+                      onChange={(e) => setSettings(prev => ({
                         ...prev,
-                        host: e.target.value
+                        smtp: { ...prev.smtp, host: e.target.value }
                       }))}
                       className="mt-1 w-full px-3 py-2 border rounded-lg"
                       placeholder="smtp.gmail.com"
@@ -380,10 +369,10 @@ export default function AdminSettings() {
                     <label className="block text-sm font-medium text-gray-700">Test SMTP Port</label>
                     <input
                       type="number"
-                      value={testSmtp.port}
-                      onChange={(e) => setTestSmtp(prev => ({
+                      value={settings.smtp.port}
+                      onChange={(e) => setSettings(prev => ({
                         ...prev,
-                        port: Number(e.target.value)
+                        smtp: { ...prev.smtp, port: Number(e.target.value) }
                       }))}
                       className="mt-1 w-full px-3 py-2 border rounded-lg"
                       placeholder="587"
@@ -396,10 +385,16 @@ export default function AdminSettings() {
                     <label className="block text-sm font-medium text-gray-700">Test Username</label>
                     <input
                       type="text"
-                      value={testSmtp.auth.user}
-                      onChange={(e) => setTestSmtp(prev => ({
+                      value={settings.smtp.auth.user}
+                      onChange={(e) => setSettings(prev => ({
                         ...prev,
-                        auth: { ...prev.auth, user: e.target.value }
+                        smtp: {
+                          ...prev.smtp,
+                          auth: {
+                            ...prev.smtp.auth,
+                            user: e.target.value
+                          }
+                        }
                       }))}
                       className="mt-1 w-full px-3 py-2 border rounded-lg"
                       placeholder="your@email.com"
@@ -409,10 +404,13 @@ export default function AdminSettings() {
                     <label className="block text-sm font-medium text-gray-700">Test Password</label>
                     <input
                       type="password"
-                      value={testSmtp.auth.pass}
-                      onChange={(e) => setTestSmtp(prev => ({
+                      value={settings.smtp.auth.pass}
+                      onChange={(e) => setSettings(prev => ({
                         ...prev,
-                        auth: { ...prev.auth, pass: e.target.value }
+                        smtp: { 
+                          ...prev.smtp, 
+                          auth: { ...prev.smtp.auth, pass: e.target.value }
+                        }
                       }))}
                       className="mt-1 w-full px-3 py-2 border rounded-lg"
                       placeholder="App Password or SMTP Password"
@@ -423,10 +421,10 @@ export default function AdminSettings() {
                 <div className="flex items-center justify-end gap-4">
                   <button
                     onClick={testEmailConfig}
-                    disabled={testLoading}
+                    disabled={loading}
                     className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
                   >
-                    {testLoading ? 'Testing...' : 'Send Test Email'}
+                    {loading ? 'Testing...' : 'Send Test Email'}
                   </button>
                 </div>
               </div>
@@ -446,14 +444,17 @@ export default function AdminSettings() {
                       <input
                         type="checkbox"
                         className="sr-only peer"
-                        checked={settings.emailNotifications[key.toLowerCase()]?.enabled}
+                        checked={settings.emailNotifications.templates[key.toLowerCase()]?.enabled}
                         onChange={(e) => setSettings(prev => ({
                           ...prev,
                           emailNotifications: {
                             ...prev.emailNotifications,
-                            [key.toLowerCase()]: {
-                              ...prev.emailNotifications[key.toLowerCase()],
-                              enabled: e.target.checked
+                            templates: {
+                              ...prev.emailNotifications.templates,
+                              [key.toLowerCase()]: {
+                                ...prev.emailNotifications.templates[key.toLowerCase()],
+                                enabled: e.target.checked
+                              }
                             }
                           }
                         }))}
@@ -467,14 +468,17 @@ export default function AdminSettings() {
                       <label className="block text-sm font-medium text-gray-700">Subject</label>
                       <input
                         type="text"
-                        value={settings.emailNotifications[key.toLowerCase()]?.subject}
+                        value={settings.emailNotifications.templates[key.toLowerCase()]?.subject}
                         onChange={(e) => setSettings(prev => ({
                           ...prev,
                           emailNotifications: {
                             ...prev.emailNotifications,
-                            [key.toLowerCase()]: {
-                              ...prev.emailNotifications[key.toLowerCase()],
-                              subject: e.target.value
+                            templates: {
+                              ...prev.emailNotifications.templates,
+                              [key.toLowerCase()]: {
+                                ...prev.emailNotifications.templates[key.toLowerCase()],
+                                subject: e.target.value
+                              }
                             }
                           }
                         }))}
@@ -490,14 +494,17 @@ export default function AdminSettings() {
                         </span>
                       </label>
                       <ReactQuill
-                        value={settings.emailNotifications[key.toLowerCase()]?.content}
+                        value={settings.emailNotifications.templates[key.toLowerCase()]?.content}
                         onChange={(content) => setSettings(prev => ({
                           ...prev,
                           emailNotifications: {
                             ...prev.emailNotifications,
-                            [key.toLowerCase()]: {
-                              ...prev.emailNotifications[key.toLowerCase()],
-                              content
+                            templates: {
+                              ...prev.emailNotifications.templates,
+                              [key.toLowerCase()]: {
+                                ...prev.emailNotifications.templates[key.toLowerCase()],
+                                content
+                              }
                             }
                           }
                         }))}
@@ -530,15 +537,12 @@ export default function AdminSettings() {
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={settings.security.loginAttempts.enabled}
+                    checked={settings.security.maxLoginAttempts > 0}
                     onChange={(e) => setSettings(prev => ({
                       ...prev,
                       security: {
                         ...prev.security,
-                        loginAttempts: {
-                          ...prev.security.loginAttempts,
-                          enabled: e.target.checked
-                        }
+                        maxLoginAttempts: e.target.checked ? 5 : 0
                       }
                     }))}
                     className="rounded text-blue-600"
@@ -552,15 +556,12 @@ export default function AdminSettings() {
                   <label className="block text-sm font-medium text-gray-700">Max Attempts</label>
                   <input
                     type="number"
-                    value={settings.security.loginAttempts.maxAttempts}
+                    value={settings.security.maxLoginAttempts}
                     onChange={(e) => setSettings(prev => ({
                       ...prev,
                       security: {
                         ...prev.security,
-                        loginAttempts: {
-                          ...prev.security.loginAttempts,
-                          maxAttempts: Number(e.target.value)
-                        }
+                        maxLoginAttempts: Number(e.target.value)
                       }
                     }))}
                     className="mt-1 w-full px-3 py-2 border rounded-lg"
@@ -571,15 +572,12 @@ export default function AdminSettings() {
                   <label className="block text-sm font-medium text-gray-700">Block Duration (minutes)</label>
                   <input
                     type="number"
-                    value={settings.security.loginAttempts.blockDuration}
+                    value={settings.security.lockoutDuration}
                     onChange={(e) => setSettings(prev => ({
                       ...prev,
                       security: {
                         ...prev.security,
-                        loginAttempts: {
-                          ...prev.security.loginAttempts,
-                          blockDuration: Number(e.target.value)
-                        }
+                        lockoutDuration: Number(e.target.value)
                       }
                     }))}
                     className="mt-1 w-full px-3 py-2 border rounded-lg"
@@ -597,15 +595,12 @@ export default function AdminSettings() {
                   <label className="block text-sm font-medium text-gray-700">Minimum Length</label>
                   <input
                     type="number"
-                    value={settings.security.passwordPolicy.minLength}
+                    value={settings.security.maxLoginAttempts}
                     onChange={(e) => setSettings(prev => ({
                       ...prev,
                       security: {
                         ...prev.security,
-                        passwordPolicy: {
-                          ...prev.security.passwordPolicy,
-                          minLength: Number(e.target.value)
-                        }
+                        maxLoginAttempts: Number(e.target.value)
                       }
                     }))}
                     className="mt-1 w-full px-3 py-2 border rounded-lg"
@@ -622,14 +617,12 @@ export default function AdminSettings() {
                     <label key={key} className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={settings.security.passwordPolicy[key]}
+                        checked={settings.security.maxLoginAttempts > 0}
                         onChange={(e) => setSettings(prev => ({
                           ...prev,
                           security: {
                             ...prev.security,
-                            passwordPolicy: {
-                              [key]: e.target.checked
-                            }
+                            maxLoginAttempts: e.target.checked ? 5 : 0
                           }
                         }))}
                         className="rounded text-blue-600"
@@ -648,12 +641,12 @@ export default function AdminSettings() {
                 <label className="block text-sm font-medium text-gray-700">Session Timeout (minutes)</label>
                 <input
                   type="number"
-                  value={settings.security.sessionTimeout}
+                  value={settings.security.lockoutDuration}
                   onChange={(e) => setSettings(prev => ({
                     ...prev,
                     security: {
                       ...prev.security,
-                      sessionTimeout: Number(e.target.value)
+                      lockoutDuration: Number(e.target.value)
                     }
                   }))}
                   className="mt-1 w-full px-3 py-2 border rounded-lg"
@@ -669,12 +662,12 @@ export default function AdminSettings() {
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={settings.security.adminIpRestriction}
+                    checked={settings.security.maxLoginAttempts > 0}
                     onChange={(e) => setSettings(prev => ({
                       ...prev,
                       security: {
                         ...prev.security,
-                        adminIpRestriction: e.target.checked
+                        maxLoginAttempts: e.target.checked ? 5 : 0
                       }
                     }))}
                     className="rounded text-blue-600"
@@ -685,12 +678,12 @@ export default function AdminSettings() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Allowed IP Addresses</label>
                 <textarea
-                  value={settings.security.ipWhitelist.join('\n')}
+                  value={settings.security.maxLoginAttempts.toString()}
                   onChange={(e) => setSettings(prev => ({
                     ...prev,
                     security: {
                       ...prev.security,
-                      ipWhitelist: e.target.value.split('\n').map(ip => ip.trim()).filter(Boolean)
+                      maxLoginAttempts: Number(e.target.value)
                     }
                   }))}
                   placeholder="Enter one IP address per line"
@@ -703,10 +696,10 @@ export default function AdminSettings() {
 
           <button
             onClick={saveSettings}
-            disabled={saving}
+            disabled={loading}
             className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            {saving ? 'Saving...' : 'Save Settings'}
+            {loading ? 'Saving...' : 'Save Settings'}
           </button>
         </div>
       </div>
