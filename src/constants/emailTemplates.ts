@@ -36,3 +36,30 @@ export const EMAIL_TEMPLATES = {
     `
   }
 } as const;
+
+export interface EmailTemplate {
+  subject: string;
+  body: string;
+}
+
+export interface EmailTemplates {
+  welcome: EmailTemplate;
+  passwordReset: EmailTemplate;
+  verifyEmail: EmailTemplate;
+  [key: string]: EmailTemplate;
+}
+
+export const DEFAULT_TEMPLATES: EmailTemplates = {
+  welcome: {
+    subject: 'Welcome to QR Generator',
+    body: 'Thank you for joining QR Generator. We\'re excited to have you on board!'
+  },
+  passwordReset: {
+    subject: 'Password Reset Request',
+    body: 'You requested a password reset. Click the link below to reset your password:'
+  },
+  verifyEmail: {
+    subject: 'Verify Your Email',
+    body: 'Please verify your email address by clicking the link below:'
+  }
+};

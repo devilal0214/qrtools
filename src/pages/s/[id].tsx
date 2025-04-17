@@ -1,157 +1,157 @@
-import { GetServerSideProps } from 'next';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
 import QRCode from 'react-qr-code';
 import Head from 'next/head';
 
-interface Props {
-  qrCode?: {
-    id: string;
-    title?: string;
-    content: string;
-    type: string;
-    scans: number;
-    isActive: boolean;
-    settings?: {
-      size?: number;
-      fgColor?: string;
-      bgColor?: string;
-      shape?: string;
-    };
+interface QRData {
+  title?: string;
+  type: string;
+  content: string;
+  settings?: {
+    size?: number;
+    fgColor?: string;
+    bgColor?: string;
+    shape?: string;
   };
-  error?: string;
 }
 
-export default function QRCodeView({ qrCode, error }: Props) {
-  if (error || !qrCode) {
+export default function QRCodeViewer() {
+  const router = useRouter();
+  const { id } = router.query;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [qrData, setQRData] = useState<QRData | null>(null);
+  const [contents, setContents] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchQRCode = async () => {
+      if (!id) return;
+      
+      try {
+        const docRef = doc(db, 'qrcodes', id as string);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+          const data = docSnap.data() as QRData;
+          setQRData(data);
+          
+          if (data.type === 'MULTI_URL') {
+            setContents(data.content.split('\n').filter(Boolean));
+          } else {
+            setContents([data.content]);
+          }
+
+          // Track view
+          await fetch('/api/track-view', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ qrId: id })
+          });
+        } else {
+          setError('QR code not found');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        setError('Failed to fetch QR code');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchQRCode();
+  }, [id]);
+
+  const handleNext = () => {
+    if (currentIndex < contents.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    }
+  };
+
+  const handlePrevious = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex(currentIndex - 1);
+    }
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
-        <div className="bg-red-50 p-6 rounded-xl">
-          <h1 className="text-xl font-semibold text-red-600 mb-2">QR Code Not Found</h1>
-          <p className="text-gray-600">The requested QR code does not exist or has been deleted.</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
       </div>
     );
   }
 
-  if (!qrCode.isActive) {
+  if (error || !qrData) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
-        <div className="bg-yellow-50 p-6 rounded-xl">
-          <h1 className="text-xl font-semibold text-yellow-600 mb-2">QR Code Paused</h1>
-          <p className="text-gray-600">This QR code is currently inactive.</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Error</h1>
+          <p className="text-gray-600">{error}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 py-12 px-4">
       <Head>
-        <title>{qrCode.title || 'QR Code'}</title>
-        <meta name="description" content={`QR Code for ${qrCode.title || 'content'}`} />
+        <title>{qrData.title || 'View QR Code'}</title>
       </Head>
 
-      <div className="bg-white/80 backdrop-blur-lg rounded-3xl p-8 shadow-lg max-w-lg w-full">
-        <div className="space-y-6">
-          {qrCode.title && (
-            <h1 className="text-2xl font-bold text-center text-gray-800">
-              {qrCode.title}
-            </h1>
+      <div className="max-w-3xl mx-auto">
+        <div className="bg-white rounded-xl shadow-lg p-8">
+          {qrData.title && (
+            <h1 className="text-2xl font-bold text-center mb-8">{qrData.title}</h1>
           )}
 
-          <div className="flex justify-center">
-            <div className="p-4 bg-white rounded-xl shadow-sm">
+          <div className="flex flex-col items-center space-y-8">
+            <div className="relative w-full flex items-center justify-center">
+              {contents.length > 1 && currentIndex > 0 && (
+                <button
+                  onClick={handlePrevious}
+                  className="absolute left-0 p-2 rounded-full bg-white shadow-lg hover:bg-gray-50"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              )}
+
               <QRCode
-                value={qrCode.content}
-                size={256}
-                bgColor={qrCode.settings?.bgColor || '#FFFFFF'}
-                fgColor={qrCode.settings?.fgColor || '#000000'}
+                value={contents[currentIndex]}
+                size={qrData.settings?.size || 256}
+                bgColor={qrData.settings?.bgColor || '#FFFFFF'}
+                fgColor={qrData.settings?.fgColor || '#000000'}
                 level="H"
                 className={`
-                  ${qrCode.settings?.shape === 'rounded' ? 'rounded-2xl' : ''}
-                  ${qrCode.settings?.shape === 'dots' ? 'rounded-full' : ''}
+                  ${qrData.settings?.shape === 'rounded' ? 'rounded-2xl' : ''}
+                  ${qrData.settings?.shape === 'dots' ? 'rounded-full' : ''}
                 `}
               />
+
+              {contents.length > 1 && currentIndex < contents.length - 1 && (
+                <button
+                  onClick={handleNext}
+                  className="absolute right-0 p-2 rounded-full bg-white shadow-lg hover:bg-gray-50"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
             </div>
+
+            {contents.length > 1 && (
+              <div className="text-center text-sm text-gray-500">
+                QR Code {currentIndex + 1} of {contents.length}
+              </div>
+            )}
           </div>
-
-          {/* <div className="text-center text-gray-500">
-            <p>Scanned {qrCode.scans} times</p>
-          </div> */}
-
-          {qrCode.type === 'URL' && (
-            <div className="text-center">
-              <a
-                href={qrCode.content}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-700 underline"
-              >
-                Visit URL directly
-              </a>
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 }
-
-export const getServerSideProps: GetServerSideProps = async ({ params }) => {
-  const id = params?.id as string;
-
-  try {
-    // Get QR code directly using document ID
-    const qrRef = doc(db, 'qrcodes', id);
-    const qrSnap = await getDoc(qrRef);
-
-    if (!qrSnap.exists()) {
-      return {
-        props: {
-          error: 'QR code not found'
-        }
-      };
-    }
-
-    const qrData = qrSnap.data();
-
-    // Check if QR code is active
-    if (!qrData.isActive) {
-      return {
-        props: {
-          error: 'This QR code has been paused'
-        }
-      };
-    }
-
-    // Update scan count in a separate try-catch to prevent blocking the view
-    try {
-      await updateDoc(qrRef, {
-        scans: increment(1),
-        lastScannedAt: new Date().toISOString()
-      });
-    } catch (updateError) {
-      console.error('Error updating scan count:', updateError);
-      // Continue even if update fails
-    }
-
-    // Return QR code data without waiting for scan count update
-    return {
-      props: {
-        qrCode: {
-          id: qrSnap.id,
-          ...qrData,
-          scans: (qrData.scans || 0) + 1 // Optimistically increment scan count
-        }
-      }
-    };
-  } catch (error) {
-    console.error('Error fetching QR code:', error);
-    return {
-      props: {
-        error: 'Failed to load QR code'
-      }
-    };
-  }
-};

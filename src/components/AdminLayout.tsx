@@ -27,8 +27,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/payments', label: 'Payment Gateways', icon: 'credit-card' },
     { href: '/admin/transactions', label: 'Transactions', icon: 'currency-dollar' },
     
-    { href: '/admin/email', label: 'Email Users', icon: 'mail' },
-    { href: '/admin/settings', label: 'Settings', icon: 'cog' }
+    { href: '/admin/email', label: 'Email Users', icon: 'mail' }
   ];
 
   return (

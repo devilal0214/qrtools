@@ -1,11 +1,11 @@
 module.exports = {
   apps: [{
-    name: 'qr-tool',
+    name: 'qr-generator',
     script: 'npm',
     args: 'start',
     env: {
       NODE_ENV: 'production',
-      PORT: 3000
+      PORT: '3000'
     }
   }]
 }
