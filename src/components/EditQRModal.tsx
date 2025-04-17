@@ -539,56 +539,93 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }: EditQRModalPr
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl p-6 max-w-2xl w-full">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold">Edit QR Code Content</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">×</button>
-        </div>
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="min-h-screen px-4 flex items-center justify-center">
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+          onClick={onClose}
+        ></div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Add title input at the top */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Title</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter QR code title"
-              className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Type</label>
-            <select
-              value={contentType}
-              onChange={(e) => handleContentTypeChange(e.target.value)}
-              className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+        {/* Modal */}
+        <div className="relative bg-white w-full max-w-2xl rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
+          {/* Header with fixed close button */}
+          <div className="sticky top-0 bg-white px-6 py-4 border-b flex items-center justify-between z-10">
+            <h2 className="text-xl font-semibold text-gray-900">Edit QR Code</h2>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-500 rounded-full hover:bg-gray-100"
             >
-              <option value="PLAIN_TEXT">Plain Text</option>
-              <option value="URL">URL</option>
-              <option value="MULTI_URL">Multi URL</option>
-              <option value="CONTACT">Contact</option>
-              <option value="SMS">SMS</option>
-              <option value="PDF">PDF</option>
-              <option value="FILE">File</option>
-              <option value="SOCIALS">Social Media</option>
-              <option value="LOCATION">Location</option>
-              <option value="PHONE">Phone</option>
-            </select>
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
-          {renderContentInput()}
+          {/* Scrollable content */}
+          <div className="p-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Add title input at the top */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Enter QR code title"
+                  className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? 'Updating...' : 'Update Content'}
-          </button>
-        </form>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Type</label>
+                <select
+                  value={contentType}
+                  onChange={(e) => handleContentTypeChange(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="PLAIN_TEXT">Plain Text</option>
+                  <option value="URL">URL</option>
+                  <option value="MULTI_URL">Multi URL</option>
+                  <option value="CONTACT">Contact</option>
+                  <option value="SMS">SMS</option>
+                  <option value="PDF">PDF</option>
+                  <option value="FILE">File</option>
+                  <option value="SOCIALS">Social Media</option>
+                  <option value="LOCATION">Location</option>
+                  <option value="PHONE">Phone</option>
+                </select>
+              </div>
+
+              {renderContentInput()}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Updating...' : 'Update Content'}
+              </button>
+            </form>
+          </div>
+
+          {/* Sticky footer for actions */}
+          <div className="sticky bottom-0 bg-white px-6 py-4 border-t flex justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {loading ? 'Updating...' : 'Update Content'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
