@@ -70,26 +70,17 @@ export default function Navigation() {
       )
     },
    
-    {
-      name: 'Short URL',
-      href: '/short-url',
-      requiresAuth: true,
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-        </svg>
-      )
-    },
-    {
-      name: 'Virtual Tour',
-      href: '/virtual-tour',
-      requiresAuth: true,
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-      )
-    },
+    // {
+    //   name: 'Short URL',
+    //   href: '/short-url',
+    //   requiresAuth: true,
+    //   icon: (
+    //     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    //       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+    //     </svg>
+    //   )
+    // },
+   
     {
       name: 'Unit Converter',
       href: '/units',
@@ -109,6 +100,16 @@ export default function Navigation() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       )
+    },
+    {
+      name: 'Virtual Tour',
+      href: '/virtual-tour',
+      requiresAuth: true,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      )
     }
   ];
 
@@ -119,7 +120,11 @@ export default function Navigation() {
         <div className="flex justify-between h-16">
           <div className="flex">
             <Link href="/" className="flex items-center text-xl font-bold text-blue-600">
-              QR Generator
+            <img
+            src="/JV_TAPtik.svg"
+            alt="Logo"
+            style={{ display: "block", width: "160px", height: "auto" }}
+             />
             </Link>
           </div>
 
@@ -163,7 +168,8 @@ export default function Navigation() {
                     <div
                       onClick={(e) => {
                         e.stopPropagation(); // Prevent event bubbling
-                        router.push('/dashboard/active');
+                       // router.push('/dashboard/active');
+                       window.open('/dashboard/active', '_blank'); // Open in new tab
                         setShowProfileMenu(false);
                       }}
                       className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
