@@ -39,3 +39,6 @@ firebase-admin.json
 # IDE
 .vscode/
 .idea/
+
+# uploads
+public/uploads/

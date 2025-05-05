@@ -3,7 +3,7 @@ import QRCode, { QRCodeProps } from 'react-qr-code';
 import Head from 'next/head';
 import AuthModal from '@/components/AuthModal';
 import { useAuth } from '@/hooks/useAuth';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, setDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useRouter } from 'next/router';
 import { ContentType, ContentTypes } from '@/types/qr';
@@ -11,6 +11,7 @@ import { PlaceAutocomplete } from '@/components/PlaceAutocomplete';
 import { uploadFile } from '@/utils/fileUpload';
 import FileUploadBox from '@/components/FileUploadBox';
 import { usePlanFeatures } from '@/hooks/usePlanFeatures';
+import Banner from '@/components/Banner';
 
 // Add contact prefix options
 const PREFIX_OPTIONS = ['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.'];
@@ -218,24 +219,43 @@ export default function Home() {
   };
 
   useEffect(() => {
-    let generatedText = '';
-    
-    switch (contentType) {
-      case ContentTypes.CONTACT:
-        generatedText = generateVCard();
-        break;
-      case ContentTypes.MULTI_URL:
-        generatedText = multiUrls.filter(url => url.trim()).join('\n');
-        break;
-      case ContentTypes.SMS:
-        generatedText = `SMSTO:${smsInfo.number}:${smsInfo.message}`;
-        break;
-      default:
-        break;
-    }
+    const updateQRContent = async () => {
+      if (contentType === ContentTypes.CONTACT) {
+        try {
+          // Generate a unique ID for the contact
+          const contactId = Math.random().toString(36).substr(2, 9);
+          
+          // Only attempt to save if user is authenticated
+          if (user) {
+            // Save contact data to Firestore first
+            const contactData = {
+              ...contactInfo,
+              userId: user.uid,
+              createdAt: new Date().toISOString()
+            };
+            
+            await setDoc(doc(db, 'contacts', contactId), contactData);
+            
+            // After successful save, set the URL as QR content
+            const contactViewUrl = `${window.location.origin}/c/${contactId}`;
+            setText(contactViewUrl);
+          } else {
+            setError('Please sign in to create contact QR codes');
+            setShowAuthModal(true);
+          }
+        } catch (error) {
+          console.error('Error saving contact:', error);
+          setError('Failed to save contact data. Please try again.');
+        }
+      } else if (contentType === ContentTypes.MULTI_URL) {
+        setText(multiUrls.filter(url => url.trim()).join('\n'));
+      } else if (contentType === ContentTypes.SMS) {
+        setText(`SMSTO:${smsInfo.number}:${smsInfo.message}`);
+      }
+    };
 
-    if (generatedText) setText(generatedText);
-  }, [contentType, contactInfo, multiUrls, smsInfo]);
+    updateQRContent();
+  }, [contentType, contactInfo, user]);
 
   useEffect(() => {
     if (text) {
@@ -247,31 +267,41 @@ export default function Home() {
     }
   }, [text, size, bgColor, fgColor]);
 
-  const generateVCard = () => {
-    const vCard = [
-      'BEGIN:VCARD',
-      'VERSION:3.0',
-      `N:${contactInfo.lastName};${contactInfo.firstName};${contactInfo.prefix};;`,
-      `FN:${[contactInfo.prefix, contactInfo.firstName, contactInfo.lastName].filter(Boolean).join(' ')}`,
-      contactInfo.organization && `ORG:${contactInfo.organization}`,
-      contactInfo.title && `TITLE:${contactInfo.title}`,
-      contactInfo.email && `EMAIL:${contactInfo.email}`,
-      contactInfo.phone && `TEL;TYPE=WORK,VOICE:${contactInfo.phone}`,
-      contactInfo.mobile && `TEL;TYPE=CELL,VOICE:${contactInfo.mobile}`,
-      contactInfo.street && `ADR;TYPE=WORK:;;${contactInfo.street};${contactInfo.city};${contactInfo.region};${contactInfo.postcode};${contactInfo.country}`,
-      contactInfo.website && `URL:${contactInfo.website}`,
-      'END:VCARD'
-    ].filter(Boolean).join('\n');
-
-    return vCard;
-  };
-
-  const generateContent = () => {
-    const content = {
-      type: contentType.toUpperCase(), // Convert to match EditQRModal format
+  const generateContent = async () => {
+    if (contentType === ContentTypes.CONTACT) {
+      try {
+        // Generate a unique ID for the contact
+        const contactId = Math.random().toString(36).substr(2, 9);
+        const contactViewUrl = `${window.location.origin}/c/${contactId}`;
+        
+        // Save contact data to Firestore with the generated ID
+        if (user) {
+          const contactData = {
+            ...contactInfo,
+            userId: user.uid,
+            createdAt: new Date().toISOString()
+          };
+          
+          await setDoc(doc(db, 'contacts', contactId), contactData);
+        }
+        
+        // Return the URL instead of vCard data
+        return {
+          type: contentType.toUpperCase(),
+          content: contactViewUrl
+        };
+      } catch (error) {
+        console.error('Error saving contact:', error);
+        setError('Failed to save contact data');
+        return null;
+      }
+    }
+    
+    // Handle other content types as before
+    return {
+      type: contentType.toUpperCase(),
       content: text
     };
-    return content;
   };
 
   const saveQRCode = async () => {
@@ -284,9 +314,9 @@ export default function Home() {
       setIsLoading(true);
       const qrData = {
         userId: user.uid,
-        title, // Add title to QR data
-        type: contentType.toUpperCase(), // Store standardized content type
-        content: text,
+        title,
+        type: contentType.toUpperCase(),
+        content: text, // This will be the view URL for contacts
         createdAt: new Date().toISOString(),
         scans: 0,
         isActive: true,
@@ -688,6 +718,14 @@ export default function Home() {
       <Head>
         <title>QR Code Generator</title>
       </Head>
+
+      {!user && (
+        <Banner
+          type="info"
+          message="Sign in to access all features and save your QR codes"
+          className="w-full max-w-5xl mb-4"
+        />
+      )}
 
       {/* Content Type Selection Card */}
       <div className="w-full max-w-5xl bg-white/80 backdrop-blur-lg rounded-3xl p-6 shadow-lg">

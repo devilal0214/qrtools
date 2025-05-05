@@ -11,6 +11,13 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
     
+    // Add contact collection rules
+    match /contacts/{contactId} {
+      allow create: if request.auth != null;
+      allow read: if true; // Allow public read for contact view pages
+      allow write: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    
     match /qrcodes/{qrId} {
       allow create: if request.auth != null;
       allow read: if true; // Allow public access to read QR codes
@@ -99,6 +106,27 @@ service cloud.firestore {
           && data.createdAt is string
           && data.userId is string
           && data.clicks is number;
+      }
+    }
+
+    // Banner rules
+    match /banners/{bannerId} {
+      allow read: if true; // Public access for reading banners
+      allow write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    // Virtual Tour rules
+    match /virtualTours/{tourId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+      
+      match /scenes/{sceneId} {
+        allow read: if get(/databases/$(database)/documents/virtualTours/$(tourId)).data.isPublic == true || 
+                     (request.auth != null && 
+                      get(/databases/$(database)/documents/virtualTours/$(tourId)).data.userId == request.auth.uid);
+        allow write: if request.auth != null && 
+                      get(/databases/$(database)/documents/virtualTours/$(tourId)).data.userId == request.auth.uid;
       }
     }
   }
