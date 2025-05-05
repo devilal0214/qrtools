@@ -34,9 +34,6 @@ export default function SceneUploader({ onSceneAdd }: Props) {
         id: Math.random().toString(36).substr(2, 9),
         title: title || 'Untitled Scene',
         imageUrl,
-        type: 'panorama',
-        position: { x: 0, y: 0 },
-        rotation: 0,
         hotspots: []
       };
 

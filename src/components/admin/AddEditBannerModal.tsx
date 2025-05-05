@@ -55,7 +55,11 @@ export default function AddEditBannerModal({ isOpen, onClose, banner, onSave }: 
 
     try {
       setLoading(true);
-      const imageUrl = await uploadFile(file, 'banners');
+      const imageUrl = await uploadFile(file, {
+        folder: 'banners',
+        maxSize: 5 * 1024 * 1024, // 5MB limit
+        allowedTypes: ['image/jpeg', 'image/png', 'image/gif']
+      });
       setFormData(prev => ({ ...prev, imageUrl }));
     } catch (error) {
       setError('Failed to upload image');

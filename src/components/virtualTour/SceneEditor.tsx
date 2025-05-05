@@ -62,8 +62,7 @@ export default function SceneEditor({ scene, scenes, onUpdate }: Props) {
 
       onUpdate({
         ...scene,
-        imageUrl,
-        type: 'panorama'
+        imageUrl
       });
     } catch (error) {
       console.error('Error uploading scene image:', error);
@@ -168,7 +167,7 @@ export default function SceneEditor({ scene, scenes, onUpdate }: Props) {
         <SceneViewer
           scene={scene}
           availableScenes={scenes.filter(s => s.id !== scene.id)}
-          onHotspotAdd={handleHotspotAdd}
+          onSceneUpdate={onUpdate}
           onHotspotClick={handleHotspotClick}
           isEditing={true}
         />

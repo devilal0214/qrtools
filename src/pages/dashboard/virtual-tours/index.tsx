@@ -82,11 +82,11 @@ export default function VirtualTours() {
                     </p>
                     <div className="mt-4 flex items-center justify-between">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        tour.status === 'published' 
+                        (tour.status || 'draft') === 'published'
                           ? 'bg-green-100 text-green-800'
                           : 'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {tour.status}
+                        {tour.status || 'Draft'}
                       </span>
                       <div className="flex gap-2">
                         <button

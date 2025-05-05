@@ -18,14 +18,19 @@ export default function CreateVirtualTour() {
   const handleSceneUpload = async (file: File) => {
     try {
       setLoading(true);
-      const url = await uploadFile(file);
+      const url = await uploadFile(file, {
+        folder: 'virtual-tours/scenes',
+        maxSize: 10 * 1024 * 1024, // 10MB
+        allowedTypes: ['image/jpeg', 'image/png']
+      });
+      
       const newScene: Scene = {
         id: Math.random().toString(36).substr(2, 9),
-        title: file.name,
-        type: file.type.startsWith('video/') ? 'video' : 'image',
-        content: url,
+        title: file.name.split('.')[0], // Remove file extension
+        imageUrl: url,
         hotspots: []
       };
+      
       setScenes([...scenes, newScene]);
     } catch (error) {
       console.error('Error uploading scene:', error);

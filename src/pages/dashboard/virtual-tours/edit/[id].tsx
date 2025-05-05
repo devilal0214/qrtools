@@ -219,7 +219,7 @@ export default function EditVirtualTour() {
               <div className="space-y-2">
                 <SceneList
                   scenes={scenes}
-                  selectedSceneId={selectedScene?.id}
+                  currentSceneId={selectedScene?.id}
                   onSceneSelect={setSelectedScene}
                   onSceneDelete={handleDeleteScene}
                 />
@@ -234,8 +234,6 @@ export default function EditVirtualTour() {
                   scene={selectedScene}
                   scenes={scenes}
                   onUpdate={handleSceneUpdate}
-                  onSelectHotspot={() => {}}
-                  onHotspotAdd={() => {}}
                 />
               ) : (
                 <div className="bg-white rounded-xl p-6 text-center text-gray-500">

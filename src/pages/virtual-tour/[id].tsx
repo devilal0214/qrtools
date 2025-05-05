@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { VirtualTourProject } from '@/types/virtualTour';
+import { VirtualTourProject, Hotspot } from '@/types/virtualTour';
 import Head from 'next/head';
 import SceneViewer from '@/components/virtualTour/SceneViewer';
 import { Dialog } from '@headlessui/react';
@@ -61,11 +61,9 @@ export default function TourView() {
         fadeOut();
       }
     } else if (hotspot.type === 'info' && hotspot.description) {
-      // Show info in a modal instead of alert
-      setActiveInfo({
-        title: hotspot.title,
-        description: hotspot.description
-      });
+      // Show info in modal
+      setActiveHotspot(hotspot);
+      setShowInfoModal(true);
     }
   };
 
@@ -140,10 +138,10 @@ export default function TourView() {
         onClose={() => setShowInfoModal(false)}
         className="fixed inset-0 z-50 overflow-y-auto"
       >
-        <div className="flex min-h-screen items-center justify-center p-4">
-          <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-          
-          <div className="relative bg-white rounded-lg p-6 max-w-md w-full">
+        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <Dialog.Panel className="relative bg-white rounded-lg p-6 max-w-md w-full">
             <Dialog.Title className="text-lg font-medium text-gray-900">
               {activeHotspot?.title}
             </Dialog.Title>
@@ -158,7 +156,7 @@ export default function TourView() {
             >
               Close
             </button>
-          </div>
+          </Dialog.Panel>
         </div>
       </Dialog>
     </div>

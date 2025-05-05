@@ -36,3 +36,16 @@ export interface VirtualTour {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface VirtualTourProject {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail: string;
+  scenes: Scene[];
+  startingSceneId: string;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+  status: 'draft' | 'published';  // Add status property
+}

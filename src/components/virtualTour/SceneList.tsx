@@ -3,29 +3,50 @@ import FileUploadBox from '@/components/FileUploadBox';
 
 interface Props {
   scenes: Scene[];
-  currentSceneId: string;
+  currentSceneId?: string;
   onSceneSelect: (scene: Scene) => void;
-  onSceneUpload: (file: File) => Promise<void>;
+  onSceneDelete?: (sceneId: string) => Promise<void>;
+  onSceneUpload?: (file: File) => Promise<void>; // Made optional
 }
 
-export default function SceneList({ scenes, currentSceneId, onSceneSelect, onSceneUpload }: Props) {
+export default function SceneList({ 
+  scenes, 
+  currentSceneId, 
+  onSceneSelect, 
+  onSceneDelete,
+  onSceneUpload 
+}: Props) {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Scenes</h2>
       
       <div className="space-y-2">
         {scenes.map(scene => (
-          <button
+          <div
             key={scene.id}
-            onClick={() => onSceneSelect(scene)}
-            className={`w-full p-2 text-left rounded-lg transition-colors ${
-              scene.id === currentSceneId
-                ? 'bg-blue-50 text-blue-700'
-                : 'hover:bg-gray-50'
+            className={`flex items-center justify-between p-3 rounded-lg ${
+              scene.id === currentSceneId ? 'bg-blue-50' : 'bg-gray-50'
             }`}
           >
-            {scene.title}
-          </button>
+            <button
+              onClick={() => onSceneSelect(scene)}
+              className={`w-full text-left transition-colors ${
+                scene.id === currentSceneId
+                  ? 'text-blue-700'
+                  : 'hover:bg-gray-50'
+              }`}
+            >
+              {scene.title}
+            </button>
+            {onSceneDelete && (
+              <button
+                onClick={() => onSceneDelete(scene.id)}
+                className="ml-2 text-red-500 hover:text-red-700"
+              >
+                Delete
+              </button>
+            )}
+          </div>
         ))}
       </div>
 

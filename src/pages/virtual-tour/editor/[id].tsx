@@ -139,8 +139,8 @@ export default function VirtualTourEditor() {
               {selectedScene ? (
                 <SceneEditor
                   scene={selectedScene}
+                  scenes={project?.scenes || []}
                   onUpdate={handleSceneUpdate}
-                  onSelectHotspot={setSelectedHotspot}
                 />
               ) : (
                 <div className="bg-white rounded-xl shadow-sm p-6 text-center text-gray-500">

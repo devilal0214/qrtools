@@ -47,15 +47,15 @@ export default function HotspotEditor({ hotspot, sceneId, availableScenes, onUpd
             <label className="block text-sm font-medium text-gray-700">Type</label>
             <select
               value={formData.type}
-              onChange={(e) => setFormData({ ...formData, type: e.target.value as 'info' | 'scene' })}
+              onChange={(e) => setFormData({ ...formData, type: e.target.value as 'info' | 'navigation' })}
               className="mt-1 w-full rounded-lg border px-3 py-2"
             >
               <option value="info">Information</option>
-              <option value="scene">Scene Navigation</option>
+              <option value="navigation">Scene Navigation</option>
             </select>
           </div>
 
-          {formData.type === 'scene' && (
+          {formData.type === 'navigation' && (
             <div>
               <label className="block text-sm font-medium text-gray-700">Target Scene</label>
               <select
