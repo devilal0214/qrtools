@@ -58,17 +58,27 @@ export default function HotspotModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Submitting form data:', { type, title, description, targetSceneId, iconUrl, iconSize });
 
+    // Basic validation
+    if (!title) {
+      console.error('Title is required');
+      return;
+    }
+
+    // Create hotspot data with proper null values instead of undefined
     const hotspotData: Partial<Hotspot> = {
-      type,
-      title,
-      description: type === 'info' ? description : null,
-      targetSceneId: type === 'navigation' ? targetSceneId : null,
-      iconUrl,
-      iconSize: iconUrl ? iconSize : undefined
+      type: type,
+      title: title,
+      description: type === 'info' ? description || null : null,
+      targetSceneId: type === 'navigation' ? targetSceneId || null : null,
+      iconUrl: iconUrl || null,
+      iconSize: iconUrl ? {
+        width: Math.max(10, Math.min(100, iconSize.width)),
+        height: Math.max(10, Math.min(100, iconSize.height))
+      } : null
     };
 
+    console.log('Submitting hotspot with data:', hotspotData);
     onSave(hotspotData);
   };
 

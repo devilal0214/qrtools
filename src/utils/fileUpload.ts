@@ -1,54 +1,47 @@
 interface UploadOptions {
   folder?: string;
-  allowedTypes?: string[];
   maxSize?: number;
+  allowedTypes?: string[];
 }
 
-export const uploadFile = async (file: File, options?: UploadOptions): Promise<string> => {
-  try {
-    // Default max size to 10MB
-    const maxSize = options?.maxSize || 10 * 1024 * 1024; // 10MB in bytes
+export async function uploadFile(file: File, options: UploadOptions = {}) {
+  const { 
+    maxSize = 10 * 1024 * 1024, // 10MB default
+    allowedTypes = ['image/*'],
+    folder = 'qr-files'
+  } = options;
 
-    // Validate file size
-    if (file.size > maxSize) {
-      throw new Error(`File size must be less than ${Math.round(maxSize / (1024 * 1024))}MB`);
-    }
-
-    // Validate file type if specified
-    if (options?.allowedTypes && !options.allowedTypes.includes(file.type)) {
-      throw new Error(`Invalid file type. Allowed types: ${options.allowedTypes.join(', ')}`);
-    }
-
-    // Create form data for Cloudinary upload
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!);
-    
-    if (options?.folder) {
-      formData.append('folder', options.folder);
-    }
-
-    // Upload to Cloudinary
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/upload`,
-      {
-        method: 'POST',
-        body: formData
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('Upload failed');
-    }
-
-    const data = await response.json();
-    return data.secure_url;
-
-  } catch (error: any) {
-    console.error('Error uploading file:', error);
-    throw new Error(error.message || 'Upload failed');
+  // Validate file
+  if (file.size > maxSize) {
+    throw new Error(`File size must be less than ${maxSize / (1024 * 1024)}MB`);
   }
-};
+
+  console.log('Cloud name:', process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME);
+  console.log('Upload preset:', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
+  // Create form data
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!);
+  formData.append('folder', folder);
+
+  // Upload to Cloudinary
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/upload`,
+    {
+      method: 'POST',
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Cloudinary error:', errorText); // This will show the real reason
+    throw new Error('Upload failed: ' + errorText);
+  }
+
+  const data = await response.json();
+  return data.secure_url;
+}
 
 export const getLocalFileUrl = (localUrl: string): string | null => {
   try {

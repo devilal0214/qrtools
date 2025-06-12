@@ -45,7 +45,11 @@ export default function TourEditor({ tour, onSave }: Props) {
   const handleSceneUpdate = async (updatedScene: Scene) => {
     try {
       setSaving(true);
-      console.log('Handling scene update:', updatedScene);
+      console.log('Updating scene:', {
+        id: updatedScene.id,
+        imageUrl: updatedScene.imageUrl,
+        hotspotsCount: updatedScene.hotspots?.length
+      });
 
       const updatedTour = {
         ...tour,
@@ -53,11 +57,6 @@ export default function TourEditor({ tour, onSave }: Props) {
           scene.id === updatedScene.id ? updatedScene : scene
         )
       };
-
-      // Ensure onSave is available
-      if (typeof onSave !== 'function') {
-        throw new Error('Tour save handler not available');
-      }
 
       await onSave(updatedTour);
       setCurrentScene(updatedScene);
@@ -70,6 +69,36 @@ export default function TourEditor({ tour, onSave }: Props) {
     }
   };
 
+  const SceneListItem = ({ scene, isActive, onClick }: SceneListItemProps) => {
+    return (
+      <div
+        className={`p-4 border rounded-lg mb-4 cursor-pointer hover:bg-gray-50 ${
+          isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+        }`}
+        onClick={onClick}
+      >
+        <div className="flex items-center space-x-4">
+          {scene.imageUrl && (
+            <div className="w-24 h-24 relative rounded-lg overflow-hidden flex-shrink-0">
+              <img
+                src={scene.imageUrl}
+                alt={scene.title}
+                className="object-cover w-full h-full"
+                loading="lazy"
+              />
+            </div>
+          )}
+          <div className="flex-grow">
+            <h3 className="font-medium text-gray-900">{scene.title}</h3>
+            <p className="text-sm text-gray-500">
+              {scene.hotspots?.length || 0} hotspots
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-screen bg-gray-100">
       <div className="w-64 bg-white border-r p-4">
@@ -78,26 +107,17 @@ export default function TourEditor({ tour, onSave }: Props) {
           currentSceneId={currentScene.id}
           onSceneSelect={setCurrentScene}
           onSceneUpload={handleSceneUpload}
+          SceneListItem={SceneListItem}
         />
       </div>
-      
-      <div className="flex-1">
+      <div className="flex-1 p-4">
         <SceneViewer
           scene={currentScene}
-          availableScenes={tour.scenes.filter(s => s.id !== currentScene.id)}
-          onSceneUpdate={handleSceneUpdate}
-          isEditing={true}
-          key={currentScene.id} // Add key to force re-render on scene change
+          onUpdate={handleSceneUpdate}
+          saving={saving}
+          isEditing={true} // Explicitly set editing mode
         />
       </div>
-
-      {saving && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-4">
-            <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full" />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

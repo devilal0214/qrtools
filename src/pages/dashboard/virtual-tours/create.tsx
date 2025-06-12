@@ -1,57 +1,46 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import DashboardLayout from '@/components/DashboardLayout';
-import { Scene, Hotspot } from '@/types/virtualTour';
-import { uploadFile } from '@/utils/fileUpload';
-import AuthGuard from '@/components/AuthGuard';
+import { addDoc, collection } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { useAuth } from '@/hooks/useAuth';
+import DashboardLayout from '@/components/DashboardLayout';
+import AuthGuard from '@/components/AuthGuard';
+import VirtualTourForm from '@/components/virtualTour/VirtualTourForm';
+import { VirtualTourProject } from '@/types/virtualTour';
 
 export default function CreateVirtualTour() {
-  const [scenes, setScenes] = useState<Scene[]>([]);
-  const [currentScene, setCurrentScene] = useState<Scene | null>(null);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { user } = useAuth();
 
-  const handleSceneUpload = async (file: File) => {
+  const handleSubmit = async (data: Partial<VirtualTourProject>) => {
+    if (!user) return;
+
     try {
       setLoading(true);
-      const url = await uploadFile(file, {
-        folder: 'virtual-tours/scenes',
-        maxSize: 10 * 1024 * 1024, // 10MB
-        allowedTypes: ['image/jpeg', 'image/png']
-      });
-      
-      const newScene: Scene = {
-        id: Math.random().toString(36).substr(2, 9),
-        title: file.name.split('.')[0], // Remove file extension
-        imageUrl: url,
-        hotspots: []
+      const tourData = {
+        ...data,
+        userId: user.uid,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'draft'
       };
-      
-      setScenes([...scenes, newScene]);
+
+      const docRef = await addDoc(collection(db, 'virtualTours'), tourData);
+      router.push(`/dashboard/virtual-tours/${docRef.id}`);
     } catch (error) {
-      console.error('Error uploading scene:', error);
+      console.error('Error creating tour:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // ... Add more handlers for hotspots, scene management, etc.
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // Save virtual tour data to Firestore
-  };
-
   return (
     <AuthGuard>
       <DashboardLayout>
-        <div className="p-6">
+        <div className="max-w-2xl mx-auto p-6">
           <h1 className="text-2xl font-bold mb-6">Create Virtual Tour</h1>
-          {/* Add form elements for tour creation */}
+          <VirtualTourForm onSubmit={handleSubmit} isLoading={loading} />
         </div>
       </DashboardLayout>
     </AuthGuard>

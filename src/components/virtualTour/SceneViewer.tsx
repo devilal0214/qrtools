@@ -3,279 +3,263 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Scene, Hotspot } from '@/types/virtualTour';
 import HotspotModal from './HotspotModal';
+import InfoModal from './InfoModal';
+import { createHotspotGeometry } from '@/utils/threeHelpers';
 
 interface Props {
   scene: Scene;
-  availableScenes?: Scene[];
   onSceneUpdate?: (scene: Scene) => void;
   onHotspotClick?: (hotspot: Hotspot) => void;
+  onNavigate?: (sceneId: string) => void;
+  saving?: boolean;
   isEditing?: boolean;
+  availableScenes?: Scene[];
 }
 
-export default function SceneViewer({ scene, availableScenes = [], onSceneUpdate, onHotspotClick, isEditing = false }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const sphereRef = useRef<THREE.Mesh | null>(null);
-  const hotspotsRef = useRef<THREE.Object3D[]>([]);
-  const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
-  const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
-  
+export default function SceneViewer({ 
+  scene, 
+  onSceneUpdate, 
+  onHotspotClick,
+  onNavigate,
+  saving = false, 
+  isEditing = false,
+  availableScenes = []
+}: Props) {
   const [showHotspotModal, setShowHotspotModal] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<THREE.Vector3 | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [selectedInfoHotspot, setSelectedInfoHotspot] = useState<Hotspot | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const sceneRef = useRef(new THREE.Scene());
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const sphereRef = useRef<THREE.Mesh | null>(null);
+  const hotspotsRef = useRef<THREE.Mesh[]>([]);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const animationFrameRef = useRef<number>();
+  const raycasterRef = useRef(new THREE.Raycaster());
+  const mouseRef = useRef(new THREE.Vector2());
 
+  // Function to create a hotspot mesh
+  const createHotspotMesh = (hotspot: Hotspot) => {
+    const geometry = createHotspotGeometry();
+    const material = new THREE.MeshBasicMaterial({ 
+      color: hotspot.type === 'info' ? 0x00ff00 : 0x0000ff,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(hotspot.position.x, hotspot.position.y, hotspot.position.z);
+    mesh.userData.hotspot = hotspot;
+
+    // Make sure hotspot always faces the camera
+    mesh.onBeforeRender = () => {
+      if (cameraRef.current) {
+        mesh.lookAt(cameraRef.current.position);
+      }
+    };
+
+    return mesh;
+  };
+
+  // Update hotspot meshes
   useEffect(() => {
-    if (!containerRef.current || !scene.imageUrl) return;
+    if (!sceneRef.current) return;
 
-    const container = containerRef.current;
-    setIsLoading(true);
+    // Remove existing hotspot meshes
+    hotspotsRef.current.forEach(mesh => {
+      sceneRef.current.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    });
+    hotspotsRef.current = [];
 
-    // Initialize Three.js scene
-    const threeScene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+    // Create new hotspot meshes
+    if (scene.hotspots) {
+      scene.hotspots.forEach(hotspot => {
+        const mesh = createHotspotMesh(hotspot);
+        sceneRef.current.add(mesh);
+        hotspotsRef.current.push(mesh);
+      });
+    }
+  }, [scene.hotspots]);
+
+  // Initialize scene
+  useEffect(() => {
+    if (!containerRef.current || !scene.imageUrl) {
+      console.warn('Container or scene image URL not available');
+      return;
+    }
+
+    // Setup renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    
-    sceneRef.current = threeScene;
-    cameraRef.current = camera;
+    renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    container.appendChild(renderer.domElement);
-
-    // Load panorama texture
-    new THREE.TextureLoader().load(
-      scene.imageUrl,
-      (texture) => {
-        // Create sphere with loaded texture
-        const geometry = new THREE.SphereGeometry(500, 60, 40);
-        geometry.scale(-1, 1, 1);
-        
-        const material = new THREE.MeshBasicMaterial({ 
-          map: texture,
-          side: THREE.DoubleSide 
-        });
-        
-        const sphere = new THREE.Mesh(geometry, material);
-        sphereRef.current = sphere;
-        threeScene.add(sphere);
-        
-        // Add hotspots after scene is loaded
-        addHotspotsToScene();
-        
-        setIsLoading(false);
-      },
-      undefined,
-      (error) => {
-        console.error('Error loading panorama:', error);
-        setIsLoading(false);
-      }
+    // Setup camera
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      containerRef.current.clientWidth / containerRef.current.clientHeight,
+      0.1,
+      1000
     );
+    camera.position.z = 0.1;
+    cameraRef.current = camera;
 
     // Setup controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableZoom = false;
     controls.enablePan = false;
     controls.rotateSpeed = -0.5;
-    camera.position.z = 0.1;
+    controlsRef.current = controls;
 
-    // Add click handler for adding hotspots
-    const handleSceneClick = (event: MouseEvent) => {
-      if (!isEditing || !sphereRef.current || !cameraRef.current) return;
-
-      const rect = containerRef.current!.getBoundingClientRect();
-      const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      mouseRef.current.set(x, y);
-      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
-
-      const intersects = raycasterRef.current.intersectObject(sphereRef.current);
-
-      if (intersects.length > 0) {
-        const point = intersects[0].point.clone().normalize().multiplyScalar(490);
-        const spherical = new THREE.Spherical().setFromVector3(point);
-
-        const position = new THREE.Vector3(
-          THREE.MathUtils.radToDeg(spherical.theta),
-          90 - THREE.MathUtils.radToDeg(spherical.phi),
-          0
-        );
-
-        setSelectedPosition(position);
-        setShowHotspotModal(true);
-      }
-    };
-
-    // Add click event listener
-    if (isEditing) {
-      renderer.domElement.addEventListener('click', handleSceneClick);
-    }
+    // Load panorama
+    const textureLoader = new THREE.TextureLoader();
+    console.log('Loading panorama:', scene.imageUrl);
+    
+    textureLoader.load(
+      scene.imageUrl,
+      (texture) => {
+        texture.minFilter = THREE.LinearFilter;
+        const geometry = new THREE.SphereGeometry(500, 60, 40);
+        geometry.scale(-1, 1, 1);
+        
+        const material = new THREE.MeshBasicMaterial({ map: texture });
+        const sphere = new THREE.Mesh(geometry, material);
+        
+        // Clear existing sphere if any
+        if (sphereRef.current) {
+          sceneRef.current.remove(sphereRef.current);
+          sphereRef.current.geometry.dispose();
+          (sphereRef.current.material as THREE.Material).dispose();
+        }
+        
+        sphereRef.current = sphere;
+        sceneRef.current.add(sphere);
+        console.log('Panorama loaded successfully');
+      },
+      undefined,
+      (error) => console.error('Error loading panorama:', error)
+    );
 
     // Animation loop
     const animate = () => {
-      requestAnimationFrame(animate);
+      animationFrameRef.current = requestAnimationFrame(animate);
       controls.update();
-      renderer.render(threeScene, camera);
+      renderer.render(sceneRef.current, camera);
     };
     animate();
 
+    // Handle window resize
+    const handleResize = () => {
+      if (!containerRef.current) return;
+      camera.aspect = containerRef.current.clientWidth / containerRef.current.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    };
+    window.addEventListener('resize', handleResize);
+
     // Cleanup
     return () => {
-      if (isEditing) {
-        renderer.domElement.removeEventListener('click', handleSceneClick);
+      console.log('Cleaning up scene');
+      window.removeEventListener('resize', handleResize);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
+      controls.dispose();
       renderer.dispose();
-      container.removeChild(renderer.domElement);
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '';
+      }
     };
-  }, [scene.imageUrl, isEditing]);
+  }, [scene.imageUrl]);
 
-  // Function to add hotspots to scene
-  const addHotspotsToScene = () => {
-    if (!sceneRef.current || !scene.hotspots) return;
+  // Handle click events differently for edit and view modes
+  const handleClick = (event: React.MouseEvent) => {
+    if (!containerRef.current || !cameraRef.current) return;
 
-    // Clear existing hotspots
-    hotspotsRef.current.forEach(hotspot => {
-      sceneRef.current?.remove(hotspot);
-    });
-    hotspotsRef.current = [];
+    const rect = containerRef.current.getBoundingClientRect();
+    mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-    // Add new hotspots
-    scene.hotspots.forEach(hotspot => {
-      const hotspotMesh = createHotspotMesh(hotspot);
-      if (hotspotMesh) {
-        sceneRef.current?.add(hotspotMesh);
-        hotspotsRef.current.push(hotspotMesh);
+    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+
+    if (isEditing) {
+      // In edit mode, intersect with the panorama sphere for hotspot creation
+      const intersects = raycasterRef.current.intersectObject(sphereRef.current!);
+      if (intersects.length > 0) {
+        setSelectedPosition(intersects[0].point);
+        setShowHotspotModal(true);
       }
-    });
-  };
-
-  // Create hotspot mesh
-  const createHotspotMesh = (hotspot: Hotspot) => {
-    const group = new THREE.Group();
-    
-    // Create visual representation
-    const geometry = new THREE.SphereGeometry(5, 32, 32);
-    const material = new THREE.MeshBasicMaterial({
-      color: hotspot.type === 'info' ? 0x00ff00 : 0x0000ff,
-      opacity: 0.8,
-      transparent: true
-    });
-    
-    const mesh = new THREE.Mesh(geometry, material);
-    
-    // Position the hotspot
-    const phi = THREE.MathUtils.degToRad(90 - hotspot.position.y);
-    const theta = THREE.MathUtils.degToRad(hotspot.position.x);
-    
-    const radius = 490; // Slightly less than sphere radius
-    mesh.position.set(
-      radius * Math.sin(phi) * Math.cos(theta),
-      radius * Math.cos(phi),
-      radius * Math.sin(phi) * Math.sin(theta)
-    );
-    
-    group.add(mesh);
-    group.userData.hotspot = hotspot;
-    
-    return group;
-  };
-
-  // Handle hotspot addition
-  const handleHotspotSave = async (hotspotData: Partial<Hotspot>) => {
-    try {
-      if (!onSceneUpdate) {
-        throw new Error('Scene update handler not provided to SceneViewer');
-      }
-
-      if (!selectedPosition) {
-        throw new Error('No position selected for hotspot');
-      }
-
-      const newHotspot: Hotspot = {
-        id: Math.random().toString(36).substr(2, 9),
-        title: hotspotData.title || '',
-        type: hotspotData.type || 'info',
-        description: hotspotData.type === 'info' ? hotspotData.description || null : null,
-        targetSceneId: hotspotData.type === 'navigation' ? hotspotData.targetSceneId || null : null,
-        iconUrl: hotspotData.iconUrl || null,
-        iconSize: hotspotData.iconSize,
-        position: {
-          x: selectedPosition.x,
-          y: selectedPosition.y,
-          z: selectedPosition.z || 0
+    } else {
+      // In view mode, intersect with hotspots for interaction
+      const intersects = raycasterRef.current.intersectObjects(hotspotsRef.current);
+      if (intersects.length > 0) {
+        const hotspot = intersects[0].object.userData.hotspot as Hotspot;
+        if (hotspot.type === 'info') {
+          setSelectedInfoHotspot(hotspot);
+        } else if (hotspot.type === 'navigation' && hotspot.targetSceneId && onNavigate) {
+          onNavigate(hotspot.targetSceneId);
         }
-      };
-
-      console.log('Saving hotspot:', newHotspot);
-
-      // Create new array if hotspots doesn't exist
-      const updatedScene = {
-        ...scene,
-        hotspots: [...(scene.hotspots || []), newHotspot]
-      };
-
-      await onSceneUpdate(updatedScene);
-      setShowHotspotModal(false);
-      setSelectedPosition(null);
-      
-      // Refresh hotspots
-      addHotspotsToScene();
-    } catch (error) {
-      console.error('Error saving hotspot:', error);
-      // Could add error notification here
+      }
     }
   };
 
-  const handleHotspotUpdate = (hotspot: Hotspot) => {
-    if (!onSceneUpdate) return;
-
-    const updatedScene = {
-      ...scene,
-      hotspots: scene.hotspots?.map(h => 
-        h.id === hotspot.id ? hotspot : h
-      ) || []
-    };
-
-    onSceneUpdate(updatedScene);
-  };
-
-  const handleHotspotDelete = (hotspotId: string) => {
-    if (!onSceneUpdate) return;
-
-    const updatedScene = {
-      ...scene,
-      hotspots: scene.hotspots?.filter(h => h.id !== hotspotId) || []
-    };
-
-    onSceneUpdate(updatedScene);
-  };
-
   return (
-    <div className="relative w-full h-[600px]">
-      <div ref={containerRef} className="w-full h-full" />
+    <div className="relative">
+      <div 
+        ref={containerRef} 
+        className="w-full h-full bg-black rounded-lg overflow-hidden"
+        style={{ minHeight: '600px' }}
+        onClick={handleClick}
+      />
       
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
-        </div>
-      )}
-      
-      {showHotspotModal && (
+      {isEditing && showHotspotModal && selectedPosition && (
         <HotspotModal
           isOpen={showHotspotModal}
           onClose={() => setShowHotspotModal(false)}
-          onSave={handleHotspotSave}
-          position={selectedPosition}
+          onSave={async (hotspotData) => {
+            if (!onSceneUpdate || !selectedPosition) return;
+            
+            const newHotspot: Hotspot = {
+              id: Math.random().toString(36).substr(2, 9),
+              type: hotspotData.type || 'info',
+              title: hotspotData.title || 'Untitled Hotspot',
+              description: hotspotData.description || null,
+              targetSceneId: hotspotData.targetSceneId || null,
+              iconUrl: hotspotData.iconUrl || null,
+              iconSize: hotspotData.iconSize || null,
+              position: {
+                x: selectedPosition.x,
+                y: selectedPosition.y,
+                z: selectedPosition.z
+              }
+            };
+
+            console.log('Adding new hotspot:', newHotspot);
+            const updatedScene = {
+              ...scene,
+              hotspots: [...(scene.hotspots || []), newHotspot]
+            };
+
+            try {
+              await onSceneUpdate(updatedScene);
+              setShowHotspotModal(false);
+              setSelectedPosition(null);
+            } catch (error) {
+              console.error('Error updating scene:', error);
+            }
+          }}
           availableScenes={availableScenes}
+          position={selectedPosition}
         />
       )}
 
-      {isEditing && (
-        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg">
-          <p className="text-sm text-gray-600">Click anywhere on the scene to add a hotspot</p>
-        </div>
+      {selectedInfoHotspot && (
+        <InfoModal
+          hotspot={selectedInfoHotspot}
+          onClose={() => setSelectedInfoHotspot(null)}
+        />
       )}
     </div>
   );
