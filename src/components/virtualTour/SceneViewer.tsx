@@ -9,6 +9,7 @@ import { createHotspotGeometry } from '@/utils/threeHelpers';
 interface Props {
   scene: Scene;
   onSceneUpdate?: (scene: Scene) => void;
+  onUpdate?: (scene: Scene) => Promise<void>;
   onHotspotClick?: (hotspot: Hotspot) => void;
   onNavigate?: (sceneId: string) => void;
   saving?: boolean;

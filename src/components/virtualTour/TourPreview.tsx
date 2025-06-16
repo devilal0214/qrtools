@@ -47,11 +47,9 @@ export default function TourPreview({ tour }: Props) {
         return;
       }
 
-      setTransitioning(true);
-
-      try {
+      setTransitioning(true);      try {
         // Fade out animation
-        await new Promise<void>(resolve => {
+        await new Promise<void>((resolve) => {
           new TWEEN.Tween({ value: 1 })
             .to({ value: 0 }, 500)
             .easing(TWEEN.Easing.Quadratic.InOut)
@@ -65,15 +63,17 @@ export default function TourPreview({ tour }: Props) {
               resolve();
             })
             .start();
-        });        // Short delay to ensure scene has loaded
+        });
+
+        // Short delay to ensure scene has loaded
         await new Promise(resolve => setTimeout(resolve, 100));
 
         // Reset opacity and fade in
         if (containerRef.current) {
           containerRef.current.style.opacity = '0';
         }
-
-        await new Promise<void>(resolve => {
+        
+        await new Promise<void>((resolve) => {
           new TWEEN.Tween({ value: 0 })
             .to({ value: 1 }, 500)
             .easing(TWEEN.Easing.Quadratic.InOut)
@@ -82,7 +82,7 @@ export default function TourPreview({ tour }: Props) {
                 containerRef.current.style.opacity = value.toString();
               }
             })
-            .onComplete(resolve)
+            .onComplete(() => resolve())
             .start();
         });
       } finally {

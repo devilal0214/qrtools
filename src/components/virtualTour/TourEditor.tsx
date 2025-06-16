@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { VirtualTour, Scene } from '@/types/virtualTour';
 import SceneViewer from './SceneViewer';
-import SceneList from './SceneList';
+import FileUploadBox from '@/components/FileUploadBox';
 import { uploadFile } from '@/utils/fileUpload';
 
 interface Props {
@@ -45,12 +45,6 @@ export default function TourEditor({ tour, onSave }: Props) {
   const handleSceneUpdate = async (updatedScene: Scene) => {
     try {
       setSaving(true);
-      console.log('Updating scene:', {
-        id: updatedScene.id,
-        imageUrl: updatedScene.imageUrl,
-        hotspotsCount: updatedScene.hotspots?.length
-      });
-
       const updatedTour = {
         ...tour,
         scenes: tour.scenes.map(scene => 
@@ -60,62 +54,64 @@ export default function TourEditor({ tour, onSave }: Props) {
 
       await onSave(updatedTour);
       setCurrentScene(updatedScene);
-      console.log('Scene updated successfully');
     } catch (error) {
       console.error('Error updating scene:', error);
-      throw error;
     } finally {
       setSaving(false);
     }
   };
 
-  const SceneListItem = ({ scene, isActive, onClick }: SceneListItemProps) => {
-    return (
-      <div
-        className={`p-4 border rounded-lg mb-4 cursor-pointer hover:bg-gray-50 ${
-          isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-        }`}
-        onClick={onClick}
-      >
-        <div className="flex items-center space-x-4">
-          {scene.imageUrl && (
-            <div className="w-24 h-24 relative rounded-lg overflow-hidden flex-shrink-0">
-              <img
-                src={scene.imageUrl}
-                alt={scene.title}
-                className="object-cover w-full h-full"
-                loading="lazy"
-              />
-            </div>
-          )}
-          <div className="flex-grow">
-            <h3 className="font-medium text-gray-900">{scene.title}</h3>
-            <p className="text-sm text-gray-500">
-              {scene.hotspots?.length || 0} hotspots
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="flex h-screen bg-gray-100">
       <div className="w-64 bg-white border-r p-4">
-        <SceneList
-          scenes={tour.scenes}
-          currentSceneId={currentScene.id}
-          onSceneSelect={setCurrentScene}
-          onSceneUpload={handleSceneUpload}
-          SceneListItem={SceneListItem}
-        />
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Scenes</h2>
+          <div className="space-y-2">
+            {tour.scenes.map(scene => (
+              <div
+                key={scene.id}
+                className={`p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                  scene.id === currentScene.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                }`}
+                onClick={() => setCurrentScene(scene)}
+              >
+                <div className="flex items-center space-x-4">
+                  {scene.imageUrl && (
+                    <div className="w-24 h-24 relative rounded-lg overflow-hidden flex-shrink-0">
+                      <img
+                        src={scene.imageUrl}
+                        alt={scene.title}
+                        className="object-cover w-full h-full"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
+                  <div className="flex-grow">
+                    <h3 className="font-medium text-gray-900">{scene.title}</h3>
+                    <p className="text-sm text-gray-500">
+                      {scene.hotspots?.length || 0} hotspots
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="pt-4 border-t">
+            <FileUploadBox
+              onFileSelect={handleSceneUpload}
+              accept="image/*"
+              label="Upload New Scene"
+            />
+          </div>
+        </div>
       </div>
       <div className="flex-1 p-4">
         <SceneViewer
           scene={currentScene}
-          onUpdate={handleSceneUpdate}
+          onSceneUpdate={handleSceneUpdate}
           saving={saving}
-          isEditing={true} // Explicitly set editing mode
+          isEditing={true}
+          availableScenes={tour.scenes}
         />
       </div>
     </div>
