@@ -4,12 +4,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Scene, Hotspot } from '@/types/virtualTour';
 import HotspotModal from './HotspotModal';
 import InfoModal from './InfoModal';
-import { createHotspotGeometry } from '@/utils/threeHelpers';
 
 interface Props {
   scene: Scene;
   onSceneUpdate?: (scene: Scene) => void;
-  onUpdate?: (scene: Scene) => Promise<void>;
   onHotspotClick?: (hotspot: Hotspot) => void;
   onNavigate?: (sceneId: string) => void;
   saving?: boolean;
@@ -42,16 +40,16 @@ export default function SceneViewer({
 
   // Function to create a hotspot mesh
   const createHotspotMesh = (hotspot: Hotspot) => {
-    const geometry = createHotspotGeometry();
+    const geometry = new THREE.SphereGeometry(10, 16, 16);
     const material = new THREE.MeshBasicMaterial({ 
       color: hotspot.type === 'info' ? 0x00ff00 : 0x0000ff,
-      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.6,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(hotspot.position.x, hotspot.position.y, hotspot.position.z);
     mesh.userData.hotspot = hotspot;
 
-    // Make sure hotspot always faces the camera
     mesh.onBeforeRender = () => {
       if (cameraRef.current) {
         mesh.lookAt(cameraRef.current.position);
@@ -61,44 +59,38 @@ export default function SceneViewer({
     return mesh;
   };
 
-  // Update hotspot meshes
+  // Update hotspots when scene changes
   useEffect(() => {
     if (!sceneRef.current) return;
 
-    // Remove existing hotspot meshes
+    // Remove existing hotspots
     hotspotsRef.current.forEach(mesh => {
       sceneRef.current.remove(mesh);
       mesh.geometry.dispose();
       (mesh.material as THREE.Material).dispose();
     });
-    hotspotsRef.current = [];    // Create new hotspot meshes
+    hotspotsRef.current = [];
+
+    // Create new hotspots
     if (scene.hotspots) {
-      console.log('Creating hotspot meshes for scene:', scene.id);
       scene.hotspots.forEach(hotspot => {
-        console.log('Creating mesh for hotspot:', hotspot);
         const mesh = createHotspotMesh(hotspot);
         sceneRef.current.add(mesh);
         hotspotsRef.current.push(mesh);
       });
-      console.log('Created', hotspotsRef.current.length, 'hotspot meshes');
     }
   }, [scene.hotspots]);
 
   // Initialize scene
   useEffect(() => {
-    if (!containerRef.current || !scene.imageUrl) {
-      console.warn('Container or scene image URL not available');
-      return;
-    }
+    if (!containerRef.current || !scene.imageUrl) return;
 
-    // Setup renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Setup camera
     const camera = new THREE.PerspectiveCamera(
       75,
       containerRef.current.clientWidth / containerRef.current.clientHeight,
@@ -108,17 +100,13 @@ export default function SceneViewer({
     camera.position.z = 0.1;
     cameraRef.current = camera;
 
-    // Setup controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableZoom = false;
     controls.enablePan = false;
     controls.rotateSpeed = -0.5;
     controlsRef.current = controls;
 
-    // Load panorama
     const textureLoader = new THREE.TextureLoader();
-    console.log('Loading panorama:', scene.imageUrl);
-    
     textureLoader.load(
       scene.imageUrl,
       (texture) => {
@@ -129,17 +117,16 @@ export default function SceneViewer({
         const material = new THREE.MeshBasicMaterial({ map: texture });
         const sphere = new THREE.Mesh(geometry, material);
         
-        // Clear existing sphere if any
         if (sphereRef.current) {
           sceneRef.current.remove(sphereRef.current);
           sphereRef.current.geometry.dispose();
           (sphereRef.current.material as THREE.Material).dispose();
         }
-          sphereRef.current = sphere;
-        sceneRef.current.add(sphere);
-        console.log('Panorama loaded successfully');
 
-        // Recreate hotspot meshes when panorama loads
+        sphereRef.current = sphere;
+        sceneRef.current.add(sphere);
+
+        // Recreate hotspots
         hotspotsRef.current.forEach(mesh => {
           sceneRef.current.remove(mesh);
           mesh.geometry.dispose();
@@ -159,7 +146,6 @@ export default function SceneViewer({
       (error) => console.error('Error loading panorama:', error)
     );
 
-    // Animation loop
     const animate = () => {
       animationFrameRef.current = requestAnimationFrame(animate);
       controls.update();
@@ -167,7 +153,6 @@ export default function SceneViewer({
     };
     animate();
 
-    // Handle window resize
     const handleResize = () => {
       if (!containerRef.current) return;
       camera.aspect = containerRef.current.clientWidth / containerRef.current.clientHeight;
@@ -176,9 +161,7 @@ export default function SceneViewer({
     };
     window.addEventListener('resize', handleResize);
 
-    // Cleanup
     return () => {
-      console.log('Cleaning up scene');
       window.removeEventListener('resize', handleResize);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -190,8 +173,6 @@ export default function SceneViewer({
       }
     };
   }, [scene.imageUrl]);
-
-  // Handle click events differently for edit and view modes
   const handleClick = (event: React.MouseEvent) => {
     if (!containerRef.current || !cameraRef.current) return;
 
@@ -201,25 +182,29 @@ export default function SceneViewer({
 
     raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
 
-    if (isEditing) {
-      // In edit mode, intersect with the panorama sphere for hotspot creation
-      const intersects = raycasterRef.current.intersectObject(sphereRef.current!);
+    if (isEditing && sphereRef.current) {
+      // In edit mode, intersect with the panorama sphere
+      const intersects = raycasterRef.current.intersectObject(sphereRef.current);
       if (intersects.length > 0) {
         setSelectedPosition(intersects[0].point);
         setShowHotspotModal(true);
       }
-    } else {      // In view mode, intersect with hotspots for interaction
-      console.log('Checking intersections with', hotspotsRef.current.length, 'hotspots');
+    } else {      // In view mode, check for hotspot intersections
       const intersects = raycasterRef.current.intersectObjects(hotspotsRef.current);
-      console.log('Found', intersects.length, 'intersections');
+      console.log('Checking hotspot intersections:', intersects.length);
+      
       if (intersects.length > 0) {
-        const hotspot = intersects[0].object.userData.hotspot as Hotspot;
-        console.log('Clicked hotspot:', hotspot);
-        if (hotspot.type === 'info') {
-          setSelectedInfoHotspot(hotspot);
-        } else if (hotspot.type === 'navigation' && onHotspotClick) {
-          console.log('Calling onHotspotClick with:', hotspot);
-          onHotspotClick(hotspot);
+        const hotspotMesh = intersects[0].object;
+        if (hotspotMesh.userData && hotspotMesh.userData.hotspot) {
+          const hotspot = hotspotMesh.userData.hotspot as Hotspot;
+          console.log('Clicked hotspot data:', hotspot);
+          
+          if (hotspot.type === 'info') {
+            setSelectedInfoHotspot(hotspot);
+          } else if (hotspot.type === 'navigation' && onHotspotClick) {
+            // Ensure we're calling the callback synchronously
+            onHotspotClick(hotspot);
+          }
         }
       }
     }
@@ -256,7 +241,6 @@ export default function SceneViewer({
               }
             };
 
-            console.log('Adding new hotspot:', newHotspot);
             const updatedScene = {
               ...scene,
               hotspots: [...(scene.hotspots || []), newHotspot]

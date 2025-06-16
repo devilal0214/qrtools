@@ -36,8 +36,8 @@ export default function TourPreview({ tour }: Props) {
     if (!currentScene) {
       setCurrentScene(tour.scenes[0]);
     }
-  }, [tour.scenes, currentScene]);
-  const handleHotspotClick = async (hotspot: Hotspot) => {    if (transitioning) return;
+  }, [tour.scenes, currentScene]);  const handleHotspotClick = async (hotspot: Hotspot) => {    
+    if (transitioning) return;
     
     console.log('Hotspot clicked:', hotspot);
 
@@ -52,47 +52,27 @@ export default function TourPreview({ tour }: Props) {
       if (!targetScene) {
         console.error('Target scene not found:', hotspot.targetSceneId);
         return;
-      }setTransitioning(true);
+      }
+        setTransitioning(true);
       try {
-        // Set the target scene first
+        // Start fade out
+        if (containerRef.current) {
+          containerRef.current.style.opacity = '0';
+        }
+
+        // Wait for fade out
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Set the target scene
         setCurrentScene(targetScene);
-        
-        // Fade out animation
-        await new Promise<void>((resolve) => {
-          new TWEEN.Tween({ value: 1 })
-            .to({ value: 0 }, 500)
-            .easing(TWEEN.Easing.Quadratic.InOut)
-            .onUpdate(({ value }) => {
-              if (containerRef.current) {
-                containerRef.current.style.opacity = value.toString();
-              }
-            })
-            .onComplete(() => {
-              resolve();
-            })
-            .start();
-        });
 
         // Short delay to ensure scene has loaded
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        // Reset opacity and fade in
+        // Fade back in
         if (containerRef.current) {
-          containerRef.current.style.opacity = '0';
+          containerRef.current.style.opacity = '1';
         }
-        
-        await new Promise<void>((resolve) => {
-          new TWEEN.Tween({ value: 0 })
-            .to({ value: 1 }, 500)
-            .easing(TWEEN.Easing.Quadratic.InOut)
-            .onUpdate(({ value }) => {
-              if (containerRef.current) {
-                containerRef.current.style.opacity = value.toString();
-              }
-            })
-            .onComplete(() => resolve())
-            .start();
-        });
       } finally {
         setTransitioning(false);
       }
