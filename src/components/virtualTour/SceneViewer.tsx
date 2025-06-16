@@ -71,15 +71,16 @@ export default function SceneViewer({
       mesh.geometry.dispose();
       (mesh.material as THREE.Material).dispose();
     });
-    hotspotsRef.current = [];
-
-    // Create new hotspot meshes
+    hotspotsRef.current = [];    // Create new hotspot meshes
     if (scene.hotspots) {
+      console.log('Creating hotspot meshes for scene:', scene.id);
       scene.hotspots.forEach(hotspot => {
+        console.log('Creating mesh for hotspot:', hotspot);
         const mesh = createHotspotMesh(hotspot);
         sceneRef.current.add(mesh);
         hotspotsRef.current.push(mesh);
       });
+      console.log('Created', hotspotsRef.current.length, 'hotspot meshes');
     }
   }, [scene.hotspots]);
 
@@ -134,10 +135,25 @@ export default function SceneViewer({
           sphereRef.current.geometry.dispose();
           (sphereRef.current.material as THREE.Material).dispose();
         }
-        
-        sphereRef.current = sphere;
+          sphereRef.current = sphere;
         sceneRef.current.add(sphere);
         console.log('Panorama loaded successfully');
+
+        // Recreate hotspot meshes when panorama loads
+        hotspotsRef.current.forEach(mesh => {
+          sceneRef.current.remove(mesh);
+          mesh.geometry.dispose();
+          (mesh.material as THREE.Material).dispose();
+        });
+        hotspotsRef.current = [];
+
+        if (scene.hotspots) {
+          scene.hotspots.forEach(hotspot => {
+            const mesh = createHotspotMesh(hotspot);
+            sceneRef.current.add(mesh);
+            hotspotsRef.current.push(mesh);
+          });
+        }
       },
       undefined,
       (error) => console.error('Error loading panorama:', error)
@@ -192,15 +208,18 @@ export default function SceneViewer({
         setSelectedPosition(intersects[0].point);
         setShowHotspotModal(true);
       }
-    } else {
-      // In view mode, intersect with hotspots for interaction
+    } else {      // In view mode, intersect with hotspots for interaction
+      console.log('Checking intersections with', hotspotsRef.current.length, 'hotspots');
       const intersects = raycasterRef.current.intersectObjects(hotspotsRef.current);
+      console.log('Found', intersects.length, 'intersections');
       if (intersects.length > 0) {
         const hotspot = intersects[0].object.userData.hotspot as Hotspot;
+        console.log('Clicked hotspot:', hotspot);
         if (hotspot.type === 'info') {
           setSelectedInfoHotspot(hotspot);
-        } else if (hotspot.type === 'navigation' && hotspot.targetSceneId && onNavigate) {
-          onNavigate(hotspot.targetSceneId);
+        } else if (hotspot.type === 'navigation' && onHotspotClick) {
+          console.log('Calling onHotspotClick with:', hotspot);
+          onHotspotClick(hotspot);
         }
       }
     }

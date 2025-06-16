@@ -37,17 +37,26 @@ export default function TourPreview({ tour }: Props) {
       setCurrentScene(tour.scenes[0]);
     }
   }, [tour.scenes, currentScene]);
-  const handleHotspotClick = async (hotspot: Hotspot) => {
-    if (transitioning) return;
+  const handleHotspotClick = async (hotspot: Hotspot) => {    if (transitioning) return;
+    
+    console.log('Hotspot clicked:', hotspot);
 
     if (hotspot.type === 'navigation' && hotspot.targetSceneId) {
+      console.log('Navigation hotspot detected, target scene ID:', hotspot.targetSceneId);
       const targetScene = tour.scenes.find(scene => scene.id === hotspot.targetSceneId);
+      console.log('Target scene found:', targetScene);
+      
+      // Debug alert to show navigation details
+      alert(`Navigating to scene:\nID: ${hotspot.targetSceneId}\nTitle: ${targetScene?.title || 'Not found'}`);
+      
       if (!targetScene) {
         console.error('Target scene not found:', hotspot.targetSceneId);
         return;
-      }
-
-      setTransitioning(true);      try {
+      }setTransitioning(true);
+      try {
+        // Set the target scene first
+        setCurrentScene(targetScene);
+        
         // Fade out animation
         await new Promise<void>((resolve) => {
           new TWEEN.Tween({ value: 1 })
@@ -59,7 +68,6 @@ export default function TourPreview({ tour }: Props) {
               }
             })
             .onComplete(() => {
-              setCurrentScene(targetScene);
               resolve();
             })
             .start();
