@@ -27,6 +27,7 @@ export default function SceneViewer({
   const [showHotspotModal, setShowHotspotModal] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<THREE.Vector3 | null>(null);
   const [selectedInfoHotspot, setSelectedInfoHotspot] = useState<Hotspot | null>(null);
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef(new THREE.Scene());
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -37,19 +38,22 @@ export default function SceneViewer({
   const animationFrameRef = useRef<number>();
   const raycasterRef = useRef(new THREE.Raycaster());
   const mouseRef = useRef(new THREE.Vector2());
+  const [hoveredHotspot, setHoveredHotspot] = useState<THREE.Mesh | null>(null);
 
-  // Function to create a hotspot mesh
+  // Create a hotspot mesh
   const createHotspotMesh = (hotspot: Hotspot) => {
-    const geometry = new THREE.SphereGeometry(10, 16, 16);
+    const geometry = new THREE.SphereGeometry(12, 24, 24);
     const material = new THREE.MeshBasicMaterial({ 
       color: hotspot.type === 'info' ? 0x00ff00 : 0x0000ff,
       transparent: true,
-      opacity: 0.6,
+      opacity: 0.8,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(hotspot.position.x, hotspot.position.y, hotspot.position.z);
     mesh.userData.hotspot = hotspot;
+    mesh.userData.isHotspot = true; // Flag for easy identification
 
+    // Always face the camera
     mesh.onBeforeRender = () => {
       if (cameraRef.current) {
         mesh.lookAt(cameraRef.current.position);
@@ -125,22 +129,6 @@ export default function SceneViewer({
 
         sphereRef.current = sphere;
         sceneRef.current.add(sphere);
-
-        // Recreate hotspots
-        hotspotsRef.current.forEach(mesh => {
-          sceneRef.current.remove(mesh);
-          mesh.geometry.dispose();
-          (mesh.material as THREE.Material).dispose();
-        });
-        hotspotsRef.current = [];
-
-        if (scene.hotspots) {
-          scene.hotspots.forEach(hotspot => {
-            const mesh = createHotspotMesh(hotspot);
-            sceneRef.current.add(mesh);
-            hotspotsRef.current.push(mesh);
-          });
-        }
       },
       undefined,
       (error) => console.error('Error loading panorama:', error)
@@ -173,6 +161,30 @@ export default function SceneViewer({
       }
     };
   }, [scene.imageUrl]);
+
+  const handleMouseMove = (event: React.MouseEvent) => {
+    if (!containerRef.current || !cameraRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+    const intersects = raycasterRef.current.intersectObjects(hotspotsRef.current);
+
+    if (intersects.length > 0) {
+      const intersectedMesh = intersects[0].object;      if (intersectedMesh.userData.isHotspot && intersectedMesh instanceof THREE.Mesh) {
+        setHoveredHotspot(intersectedMesh);
+        containerRef.current.style.cursor = 'pointer';
+      }
+    } else {
+      setHoveredHotspot(null);
+      if (containerRef.current) {
+        containerRef.current.style.cursor = 'grab';
+      }
+    }
+  };
+
   const handleClick = (event: React.MouseEvent) => {
     if (!containerRef.current || !cameraRef.current) return;
 
@@ -183,28 +195,20 @@ export default function SceneViewer({
     raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
 
     if (isEditing && sphereRef.current) {
-      // In edit mode, intersect with the panorama sphere
       const intersects = raycasterRef.current.intersectObject(sphereRef.current);
       if (intersects.length > 0) {
         setSelectedPosition(intersects[0].point);
         setShowHotspotModal(true);
       }
-    } else {      // In view mode, check for hotspot intersections
+    } else {
       const intersects = raycasterRef.current.intersectObjects(hotspotsRef.current);
-      console.log('Checking hotspot intersections:', intersects.length);
-      
-      if (intersects.length > 0) {
-        const hotspotMesh = intersects[0].object;
-        if (hotspotMesh.userData && hotspotMesh.userData.hotspot) {
-          const hotspot = hotspotMesh.userData.hotspot as Hotspot;
-          console.log('Clicked hotspot data:', hotspot);
-          
-          if (hotspot.type === 'info') {
-            setSelectedInfoHotspot(hotspot);
-          } else if (hotspot.type === 'navigation' && onHotspotClick) {
-            // Ensure we're calling the callback synchronously
-            onHotspotClick(hotspot);
-          }
+      if (intersects.length > 0 && intersects[0].object.userData.isHotspot) {
+        const hotspot = intersects[0].object.userData.hotspot as Hotspot;
+        if (onHotspotClick) {
+          event.preventDefault();
+          event.stopPropagation();
+          console.log('Triggering hotspot click:', hotspot);
+          onHotspotClick(hotspot);
         }
       }
     }
@@ -217,6 +221,7 @@ export default function SceneViewer({
         className="w-full h-full bg-black rounded-lg overflow-hidden"
         style={{ minHeight: '600px' }}
         onClick={handleClick}
+        onMouseMove={handleMouseMove}
       />
       
       {isEditing && showHotspotModal && selectedPosition && (
@@ -241,13 +246,11 @@ export default function SceneViewer({
               }
             };
 
-            const updatedScene = {
-              ...scene,
-              hotspots: [...(scene.hotspots || []), newHotspot]
-            };
-
             try {
-              await onSceneUpdate(updatedScene);
+              await onSceneUpdate({
+                ...scene,
+                hotspots: [...(scene.hotspots || []), newHotspot]
+              });
               setShowHotspotModal(false);
               setSelectedPosition(null);
             } catch (error) {

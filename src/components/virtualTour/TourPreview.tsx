@@ -15,21 +15,19 @@ export default function TourPreview({ tour }: Props) {
   const [transitioning, setTransitioning] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-
   // Set up TWEEN animation loop
   useEffect(() => {
-    let animationFrameId: number;
-    const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
-      TWEEN.update();
-    };
-    animate();
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
+    function animate() {
+      if (transitioning) {
+        TWEEN.update();
       }
+      requestAnimationFrame(animate);
+    }
+    const animationFrameId = requestAnimationFrame(animate);
+    return () => {
+      cancelAnimationFrame(animationFrameId);
     };
-  }, []);
+  }, [transitioning]);
 
   // Handle scene changes
   useEffect(() => {
@@ -42,37 +40,40 @@ export default function TourPreview({ tour }: Props) {
     console.log('Hotspot clicked:', hotspot);
 
     if (hotspot.type === 'navigation' && hotspot.targetSceneId) {
-      console.log('Navigation hotspot detected, target scene ID:', hotspot.targetSceneId);
-      const targetScene = tour.scenes.find(scene => scene.id === hotspot.targetSceneId);
-      console.log('Target scene found:', targetScene);
-      
-      // Debug alert to show navigation details
-      alert(`Navigating to scene:\nID: ${hotspot.targetSceneId}\nTitle: ${targetScene?.title || 'Not found'}`);
-      
-      if (!targetScene) {
-        console.error('Target scene not found:', hotspot.targetSceneId);
-        return;
-      }
-        setTransitioning(true);
       try {
-        // Start fade out
+        console.log('Navigation hotspot detected, target scene ID:', hotspot.targetSceneId);
+        const targetScene = tour.scenes.find(scene => scene.id === hotspot.targetSceneId);
+        console.log('Target scene found:', targetScene);
+        
+        if (!targetScene) {
+          console.error('Target scene not found:', hotspot.targetSceneId);
+          return;
+        }
+        
+        setTransitioning(true);
+        
+        // Fade out current scene
         if (containerRef.current) {
+          containerRef.current.style.transition = 'opacity 0.5s ease-in-out';
           containerRef.current.style.opacity = '0';
         }
 
         // Wait for fade out
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Set the target scene
+        // Change scene
         setCurrentScene(targetScene);
 
-        // Short delay to ensure scene has loaded
+        // Wait for scene change
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        // Fade back in
+        // Fade in new scene
         if (containerRef.current) {
           containerRef.current.style.opacity = '1';
         }
+
+        // Wait for fade in
+        await new Promise(resolve => setTimeout(resolve, 500));
       } finally {
         setTransitioning(false);
       }
