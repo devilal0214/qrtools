@@ -15,7 +15,7 @@ interface MenuItem {
 }
 
 export default function Navigation() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
@@ -39,6 +39,11 @@ export default function Navigation() {
   const handleProtectedLink = (path: string) => {
     // Don't navigate if we're already on this route
     if (router.pathname === path) {
+      return;
+    }
+
+    if (loading) {
+      // Wait for auth check to finish
       return;
     }
 
@@ -356,7 +361,7 @@ export default function Navigation() {
       </div>
 
       <AuthModal 
-        isOpen={showAuthModal} 
+        isOpen={showAuthModal && !loading} 
         onClose={handleAuthModalClose}
       />
     </nav>

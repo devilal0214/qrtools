@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import AuthModal from './AuthModal';
 import { PlaceAutocomplete } from './PlaceAutocomplete';
 import { ContentTypes } from '@/types/qr';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -8,22 +10,22 @@ import { db } from '@/lib/firebase';
 const PREFIX_OPTIONS = ['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.'];
 
 export default function EditQRModal({ qrCode, onClose, onUpdate }) {
+  const { user, loading } = useAuth();
   const [content, setContent] = useState(qrCode.content);
   const [title, setTitle] = useState(qrCode.title || '');
   const [error, setError] = useState('');
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Initialize contact info from URL for contact type
   const [contactInfo, setContactInfo] = useState(() => {
     if (qrCode.type === ContentTypes.CONTACT) {
       // Extract contact ID from URL (assuming format: domain.com/c/[contactId])
       const contactId = qrCode.content.split('/').pop();
-      
       // Fetch contact data from Firestore
       const fetchContactData = async () => {
         try {
           const contactRef = doc(db, 'contacts', contactId);
           const contactSnap = await getDoc(contactRef);
-          
           if (contactSnap.exists()) {
             const data = contactSnap.data();
             setContactInfo({
@@ -47,9 +49,7 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
           console.error('Error fetching contact data:', error);
         }
       };
-
       fetchContactData();
-      
       // Return default empty state initially
       return {
         prefix: '',
@@ -75,19 +75,21 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
+    if (!user) {
+      setShowAuthModal(true);
+      setError('You must be logged in to edit a QR code.');
+      return;
+    }
     try {
       if (qrCode.type === ContentTypes.CONTACT) {
         // Extract contact ID from URL
         const contactId = qrCode.content.split('/').pop();
-        
         // Update contact data in Firestore
         const contactRef = doc(db, 'contacts', contactId);
         await updateDoc(contactRef, {
           ...contactInfo,
           updatedAt: new Date().toISOString()
         });
-
         // The QR code URL remains the same, just update the title if changed
         onUpdate({
           ...qrCode,
@@ -101,7 +103,6 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
           content
         });
       }
-      
       onClose();
     } catch (error) {
       console.error('Error updating:', error);
@@ -110,46 +111,54 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
   };
 
   const renderContentInput = () => {
+    // Block all input if not logged in
+    const inputProps = {
+      disabled: !user || loading,
+      onFocus: () => { if (!user) setShowAuthModal(true); }
+    };
     switch (qrCode.type) {
       case ContentTypes.PLAIN_TEXT:
         return (
           <textarea
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={e => setContent(e.target.value)}
             rows={5}
             className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+            {...inputProps}
           />
         );
-
       case ContentTypes.URL:
         return (
           <input
             type="url"
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={e => setContent(e.target.value)}
             className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+            {...inputProps}
           />
         );
-
       case ContentTypes.LOCATION:
         return (
           <PlaceAutocomplete
             value={content}
             onChange={setContent}
             className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+            // @ts-ignore
+            disabled={!user || loading}
+            // @ts-ignore
+            onFocus={() => { if (!user) setShowAuthModal(true); }}
           />
         );
-
       case ContentTypes.PHONE:
         return (
           <input
             type="tel"
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={e => setContent(e.target.value)}
             className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+            {...inputProps}
           />
         );
-
       case ContentTypes.SMS:
         return (
           <div className="space-y-4">
@@ -158,22 +167,23 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
               <input
                 type="tel"
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={e => setContent(e.target.value)}
                 className="mt-1 w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+                {...inputProps}
               />
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700">Message</label>
               <textarea
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={e => setContent(e.target.value)}
                 rows={3}
                 className="mt-1 w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+                {...inputProps}
               />
             </div>
           </div>
         );
-
       case ContentTypes.CONTACT:
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -181,8 +191,10 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
               <label className="text-xs text-gray-500">Prefix</label>
               <select
                 value={contactInfo.prefix}
-                onChange={(e) => setContactInfo({ ...contactInfo, prefix: e.target.value })}
+                onChange={e => setContactInfo({ ...contactInfo, prefix: e.target.value })}
                 className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                disabled={!user || loading}
+                onFocus={() => { if (!user) setShowAuthModal(true); }}
               >
                 <option value="">Select Prefix</option>
                 {PREFIX_OPTIONS.map(prefix => (
@@ -210,21 +222,23 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
                 <input
                   type={key === 'email' ? 'email' : 'text'}
                   value={contactInfo[key]}
-                  onChange={(e) => setContactInfo({ ...contactInfo, [key]: e.target.value })}
+                  onChange={e => setContactInfo({ ...contactInfo, [key]: e.target.value })}
                   className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  disabled={!user || loading}
+                  onFocus={() => { if (!user) setShowAuthModal(true); }}
                 />
               </div>
             ))}
           </div>
         );
-
       default:
         return (
           <input
             type="text"
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={e => setContent(e.target.value)}
             className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+            {...inputProps}
           />
         );
     }
@@ -232,7 +246,7 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-gray-900">Edit QR Code</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
@@ -242,14 +256,29 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Overlay for unauthenticated users */}
+        {!user && !loading && (
+          <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center">
+            <p className="mb-4 text-lg font-semibold text-gray-700">Please log in to edit a QR code.</p>
+            <button
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              onClick={() => setShowAuthModal(true)}
+            >
+              Log In
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6" autoComplete="off">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={e => setTitle(e.target.value)}
               className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+              disabled={!user || loading}
+              onFocus={() => { if (!user) setShowAuthModal(true); }}
             />
           </div>
 
@@ -273,11 +302,15 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
             <button
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              disabled={!user || loading}
             >
               Save Changes
             </button>
           </div>
         </form>
+
+        {/* Auth Modal */}
+        <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
       </div>
     </div>
   );
