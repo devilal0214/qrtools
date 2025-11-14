@@ -220,7 +220,7 @@ const SOCIAL_PLATFORMS = [
     label: "Instagram",
     icon: (
       <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M12 2c-2.716 0-3.056.012-4.123.06-1.064.049-1.791.218-2.427.465a4.901 4.901 0 0 0-1.772 1.153A4.902 4.902 0 0 0 2.525 5.45c-.247.636-.416 1.363-.465 2.427C2.012 8.944 2 9.284 2 12s.012 3.056.06 4.123c.049 1.064.218 1.791.465 2.427a4.902 4.902 0 0 0 1.153 1.772 4.901 4.901 0 0 0 1.772 1.153c.636.247 1.363.416 2.427.465 1.067.048 1.407.06 4.123.06s3.056-.012 4.123-.06c1.064-.049 1.791-.218 2.427-.465a4.902 4.902 0 0 0 1.772-1.153 4.902 4.902 0 0 0 1.153-1.772c.247-.636.416-1.363.465-2.427.048-1.067.06-1.407.06-4.123s-.012-3.056-.06-4.123c-.049-1.064-.218-1.791-.465-2.427a4.902 4.902 0 0 0-1.153-1.772 4.901 4.901 0 0 0-1.772-1.153c-.636-.247-1.363-.416-2.427-.465C15.056 2.012 14.716 2 12 2zm0 1.802c2.67 0 2.986.01 4.04.058.975.045 1.505.207 1.858.344.467.182.8.399 1.15.748.35.35.566.683.748 1.15.137.353.3.883.344 1.857.048 1.055.058 1.37.058 4.041 0 2.67-.01 2.986-.058 4.04-.045.975-.207 1.505-.344 1.858a3.1 3.1 0 0 1-.748 1.15c-.35.35-.683.566-1.15.748-.353.137-.883.3-1.857.344-1.054.048-1.37.058-4.041.058-2.67 0-2.987-.01-4.04-.058-.975-.045-1.505-.207-1.858-.344a3.098 3.098 0 0 1-1.15-.748 3.098 3.098 0 0 1-.748-1.15c-.137-.353-.3-.883-.344-1.857-.048-1.055-.058-1.37-.058-4.041 0-2.67.01-2.986.058-4.04.045-.975.207-1.505.344-1.858.182-.467.399-.8.748-1.15.35-.35.683-.566 1.15-.748.353-.137.883-.3 1.857-.344 1.055-.048 1.37-.058 4.041-.058zm0 11.531a3.333 3.333 0 1 1 0-6.666 3.333 3.333 0 0 1 0 6.666zm0-8.468a5.135 5.135 0 1 0 0 10.27 5.135 5.135 0 0 0 0-10.27zm6.538-.203a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0z" />
+        <path d="M12 2c-2.716 0-3.056.012-4.123.06-1.064.049-1.791.218-2.427.465a4.901 4.901 0 0 0-1.772 1.153A4.902 4.902 0 0 0 2.525 5.45c-.247.636-.416 1.363-.465 2.427C2.012 8.944 2 9.284 2 12s.012 3.056.06 4.123c.049 1.064.218 1.791.465 2.427a4.902 4.902 0 0 0 1.153 1.772 4.901 4.901 0 0 0 1.772 1.153c.636.247 1.363.416 2.427.465 1.067.048 1.407.06 4.123.06s3.056-.012 4.123-.06c1.064-.049 1.791-.218 2.427-.465a4.902 4.902 0 0 0 1.772-1.153 4.902 4.902 0 0 0 1.153-1.772c.247-.636.416-1.363.465-2.427.048-1.067.06-1.407.06-4.123s-.012-3.056-.06-4.123c-.049-1.064-.218-1.791-.465-2.427a4.902 4.902 0 0 0-1.153-1.772 4.901 4.901 0 0 0-1.772-1.153c-.636-.247-1.363-.416-2.427-.465C15.056 2.012 14.716 2 12 2zm0 1.802c2.67 0 2.986.01 4.04.058.975.045 1.505.207 1.858.344.467.182.8.399 1.15.748.35.35.566.683.748 1.15.137.353.3.883.344 1.857.048 1.055.058 1.37.058 4.041 0 2.67-.01 2.986-.58 4.04-.045.975-.207 1.505-.344 1.858a3.1 3.1 0 0 1-.748 1.15c-.35.35-.683.566-1.15.748-.353.137-.883.3-1.857.344-1.054.048-1.37.058-4.041.058-2.67 0-2.987-.01-4.04-.058-.975-.045-1.505-.207-1.858-.344a3.098 3.098 0 0 1-1.15-.748 3.098 3.098 0 0 1-.748-1.15c-.137-.353-.3-.883-.344-1.857-.048-1.055-.058-1.37-.058-4.041 0-2.67.01-2.986.058-4.04.045-.975.207-1.505.344-1.858.182-.467.399-.8.748-1.15.35-.35.683-.566 1.15-.748.353-.137.883-.3 1.857-.344 1.055-.048 1.37-.058 4.041-.058zm0 11.531a3.333 3.333 0 1 1 0-6.666 3.333 3.333 0 0 1 0 6.666zm0-8.468a5.135 5.135 0 1 0 0 10.27 5.135 5.135 0 0 0 0-10.27zm6.538-.203a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0z" />
       </svg>
     ),
   },
@@ -906,6 +906,96 @@ export default function Home() {
     }
   };
 
+  // New: frame renderer used by the preview
+  const renderQRFrame = () => {
+    if (!text) {
+      return (
+        <div className="flex flex-col items-center text-gray-400 gap-2">
+          <span className="text-4xl leading-none">+</span>
+          <p className="text-sm">Enter content to generate QR code</p>
+        </div>
+      );
+    }
+
+    const QRCore = (
+      <div className="relative inline-block">
+        <QRCode
+          value={text}
+          size={180}
+          bgColor={bgColor}
+          fgColor={fgColor}
+          level={qrLevel}
+          ref={qrRef}
+          style={{ width: 180, height: 180 }}
+          viewBox="0 0 180 180"
+          className={
+            style.shape === "rounded"
+              ? "rounded-2xl"
+              : style.shape === "dots"
+              ? "rounded-3xl"
+              : ""
+          }
+        />
+
+        {(logoImage || logoPreset) && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">
+              {logoImage ? (
+                <img
+                  src={logoImage}
+                  alt="logo"
+                  className="w-10 h-10 object-contain"
+                />
+              ) : (
+                <span className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-semibold">
+                  {logoPreset?.slice(0, 2).toUpperCase()}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+
+    switch (frameStyle) {
+      case "none":
+        return (
+          <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
+            {QRCore}
+          </div>
+        );
+
+      case "card":
+        return (
+          <div className="relative inline-flex flex-col items-center">
+            <div className="bg-[radial-gradient(circle_at_top,_#e0f2fe,_#ffffff)] rounded-2xl shadow-[0_18px_40px_rgba(15,23,42,0.12)] p-6 border border-slate-100">
+              <div className=" rounded-xl p-4 flex items-center justify-center">
+                {QRCore}
+              </div>
+            </div>
+          </div>
+        );
+
+      case "soft":
+        return (
+          <div className="relative inline-flex items-center justify-center">
+            <div className="p-[3px] rounded-l bg-gradient-to-br from-sky-400 via-indigo-500 to-fuchsia-500">
+              <div className=" rounded-full p-5 shadow-[0_18px_40px_rgba(15,23,42,0.18)] flex items-center justify-center">
+                {QRCore}
+              </div>
+            </div>
+          </div>
+        );
+
+      default:
+        return (
+          <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
+            {QRCore}
+          </div>
+        );
+    }
+  };
+
   const handleDownloadAndNext = async (format: "png" | "svg") => {
     if (planLoading) {
       setError("Loading plan details...");
@@ -1025,7 +1115,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* MAIN BOX (QRFY style content + QR preview) */}
+        {/* MAIN BOX (style content + QR preview) */}
         <div className="grid lg:grid-cols-5 gap-8 bg-white sm:p-7 rounded-[10px]">
           {/* Left Panel - Form Controls */}
           <div className="lg:col-span-3 space-y-6">
@@ -1044,22 +1134,6 @@ export default function Home() {
             </div>
 
             <div className="space-y-4">{renderContentInput()}</div>
-
-            {/* Preview size */}
-            {/* <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-600 block">
-                Preview Size
-              </label>
-              <input
-                type="range"
-                value={size}
-                onChange={(e) => setSize(Number(e.target.value))}
-                className="w-full"
-                min="128"
-                max="512"
-              />
-              <span className="text-sm text-gray-500">{size}px</span>
-            </div> */}
 
             {/* DESIGN YOUR QR – tabs*/}
             <div className="bg-white rounded-3xl  p-5 space-y-5">
@@ -1118,9 +1192,6 @@ export default function Home() {
                       </button>
                     ))}
                   </div>
-                  <p className="text-xs text-gray-400">
-                    {/* demo data */}
-                  </p>
                 </div>
               )}
 
@@ -1312,53 +1383,8 @@ export default function Home() {
                         Generating QR code...
                       </p>
                     </div>
-                  ) : text ? (
-                    <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
-                      <div className="relative inline-block">
-                        <QRCode
-                          value={text}
-                          size={180}
-                          bgColor={bgColor}
-                          fgColor={fgColor}
-                          level={qrLevel}
-                          ref={qrRef}
-                          style={{ width: 180, height: 180 }}
-                          viewBox="0 0 180 180"
-                          className={
-                            style.shape === "rounded"
-                              ? "rounded-2xl"
-                              : style.shape === "dots"
-                              ? "rounded-3xl"
-                              : ""
-                          }
-                        />
-
-                        {(logoImage || logoPreset) && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">
-                              {logoImage ? (
-                                <img
-                                  src={logoImage}
-                                  alt="logo"
-                                  className="w-10 h-10 object-contain"
-                                />
-                              ) : (
-                                <span className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-semibold">
-                                  {logoPreset?.slice(0, 2).toUpperCase()}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   ) : (
-                    <div className="flex flex-col items-center text-gray-400 gap-2">
-                      <span className="text-4xl leading-none">+</span>
-                      <p className="text-sm">
-                        Enter content to generate QR code
-                      </p>
-                    </div>
+                    renderQRFrame()
                   )}
                 </div>
 
