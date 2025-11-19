@@ -1,39 +1,36 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import QRCode from "react-qr-code";
 
 interface QRDoc {
   type: string;
   content: string;
   isActive?: boolean;
+  settings?: {
+    size?: number;
+    fgColor?: string;
+    bgColor?: string;
+    shape?: "square" | "rounded" | "dots";
+  };
 }
 
-export default function QRRedirectPage() {
+export default function QRPage() {
   const router = useRouter();
   const { id } = router.query;
 
   const [status, setStatus] = useState<"loading" | "error" | "done">("loading");
   const [message, setMessage] = useState<string>("");
+  const [qrCode, setQrCode] = useState<QRDoc | null>(null);
+  const [urls, setUrls] = useState<string[]>([]);
+  const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
 
   useEffect(() => {
     if (!id) return;
 
-    const handleRedirect = async () => {
+    const handleQR = async () => {
       try {
-        // 1) Track scan first
-        try {
-          await fetch("/api/track-view", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ qrId: id }),
-          });
-        } catch (trackErr) {
-          console.error("Failed to track scan:", trackErr);
-          // tracking fail bhi ho jaye, redirect continue karega
-        }
-
-        // 2) Load QR details from Firestore
         const ref = doc(db, "qrcodes", id as string);
         const snap = await getDoc(ref);
 
@@ -51,10 +48,28 @@ export default function QRRedirectPage() {
           return;
         }
 
+        //  Increment scan count (client side)
+        try {
+          await updateDoc(ref, { scans: increment(1) });
+        } catch (e) {
+          console.error("Error incrementing scans:", e);
+        }
+
+        //  Track detailed view (IP, browser, etc) via API
+        try {
+          await fetch("/api/track-view", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ qrId: id }),
+          });
+        } catch (e) {
+          console.error("Error tracking view:", e);
+        }
+
         const type = (data.type || "").toUpperCase();
         const content = data.content || "";
 
-        // SOCIALS
+        // ========== SOCIALS ==========
         if (type === "SOCIALS") {
           try {
             const socials = JSON.parse(content || "{}");
@@ -77,25 +92,34 @@ export default function QRRedirectPage() {
           }
         }
 
-        // MULTI_URL (optional – if you use it)
+        // ========== MULTI_URL ==========
         if (type === "MULTI_URL") {
-          const urls = content
-            .split("\n") // ya jo bhi separator use kar rahe ho
+          // Your generator is using "\n" between URLs
+          const urlList = content
+            .split("\n")
             .map((u) => u.trim())
             .filter(Boolean);
 
-          if (urls.length === 1 && typeof window !== "undefined") {
-            window.location.href = urls[0];
+          if (urlList.length === 0) {
+            setStatus("error");
+            setMessage("No URLs found for this QR.");
             return;
           }
 
-          // Example: show a simple error if multiple hai and UI nahi banayi
-          setStatus("error");
-          setMessage("This QR contains multiple links, but no UI is set yet.");
+          // If only one URL → direct redirect
+          if (urlList.length === 1 && typeof window !== "undefined") {
+            window.location.href = urlList[0];
+            return;
+          }
+
+          // Multiple URLs → show Multi URL viewer with QR codes
+          setQrCode(data);
+          setUrls(urlList);
+          setStatus("done");
           return;
         }
 
-        // Simple URL
+        // ========== SIMPLE URL ==========
         if (type === "URL") {
           if (content && typeof window !== "undefined") {
             window.location.href = content;
@@ -106,9 +130,10 @@ export default function QRRedirectPage() {
           return;
         }
 
-        // Baaki types ke liye sirf content show kar do
-        setStatus("done");
+        // ========== OTHER TYPES (PLAIN_TEXT, SMS, etc.) ==========
+        setQrCode(data);
         setMessage(content);
+        setStatus("done");
       } catch (error) {
         console.error("Error loading QR:", error);
         setStatus("error");
@@ -116,8 +141,10 @@ export default function QRRedirectPage() {
       }
     };
 
-    handleRedirect();
-  }, [id, router]);
+    handleQR();
+  }, [id]);
+
+  // ================== RENDER STATES ==================
 
   if (status === "loading") {
     return (
@@ -138,12 +165,85 @@ export default function QRRedirectPage() {
     );
   }
 
-  // Fallback: show content
+  // ================== MULTI_URL VIEWER (WITH QR) ==================
+
+  if (qrCode && qrCode.type === "MULTI_URL" && urls.length > 1) {
+    const size = qrCode.settings?.size || 256;
+    const fgColor = qrCode.settings?.fgColor || "#000000";
+    const bgColor = qrCode.settings?.bgColor || "#FFFFFF";
+    const shape = qrCode.settings?.shape;
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-lg max-w-4xl w-full space-y-8">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold">Multiple QR Codes</h2>
+            <div className="flex gap-2 items-center">
+              <button
+                onClick={() =>
+                  setCurrentUrlIndex((prev) => Math.max(0, prev - 1))
+                }
+                disabled={currentUrlIndex === 0}
+                className="px-3 py-1 rounded-lg bg-gray-100 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1 text-sm text-gray-600">
+                {currentUrlIndex + 1} / {urls.length}
+              </span>
+              <button
+                onClick={() =>
+                  setCurrentUrlIndex((prev) =>
+                    Math.min(urls.length - 1, prev + 1)
+                  )
+                }
+                disabled={currentUrlIndex === urls.length - 1}
+                className="px-3 py-1 rounded-lg bg-gray-100 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-center">
+            <QRCode
+              value={urls[currentUrlIndex]}
+              size={size}
+              fgColor={fgColor}
+              bgColor={bgColor}
+              level="H"
+              className={`
+                ${shape === "rounded" ? "rounded-2xl" : ""}
+                ${shape === "dots" ? "rounded-full" : ""}
+              `}
+            />
+          </div>
+
+          <div className="space-y-2 text-center">
+            <p className="text-sm text-gray-500 break-all">
+              {urls[currentUrlIndex]}
+            </p>
+            <a
+              href={urls[currentUrlIndex]}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block mt-2 text-sm text-blue-600 hover:underline"
+            >
+              Open this link
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ================== FALLBACK: SHOW CONTENT TEXT ==================
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="max-w-md w-full bg-white shadow-lg rounded-2xl p-6">
         <p className="text-gray-900 text-sm whitespace-pre-wrap break-words">
-          {message}
+          {message || "No content available for this QR."}
         </p>
       </div>
     </div>

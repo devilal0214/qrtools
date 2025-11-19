@@ -1,11 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { adminDb } from "@/lib/firebase-admin";
-import UAParser from "ua-parser-js";
+import { UAParser } from "ua-parser-js";
 
 async function getGeoFromIP(ip: string | null) {
   if (!ip) return null;
 
-  // x-forwarded-for me multiple IPs ho sakte hain, first wala real client hota hai
   const cleanIp = ip.split(",")[0].trim();
 
   try {
