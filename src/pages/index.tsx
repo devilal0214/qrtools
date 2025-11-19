@@ -3,7 +3,7 @@ import QRCode from "react-qr-code";
 import Head from "next/head";
 import AuthModal from "@/components/AuthModal";
 import { useAuth } from "@/hooks/useAuth";
-import { collection, addDoc, setDoc, doc } from "firebase/firestore";
+import { collection, addDoc, setDoc, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/router";
 import { ContentType, ContentTypes } from "@/types/qr";
@@ -12,6 +12,20 @@ import { uploadFile } from "@/utils/fileUpload";
 import FileUploadBox from "@/components/FileUploadBox";
 import { usePlanFeatures } from "@/hooks/usePlanFeatures";
 import Banner from "@/components/Banner";
+import { generateNanoCode } from "@/utils/nano";
+
+const getBaseUrl = () => {
+  if (process.env.NEXT_PUBLIC_BASE_URL) {
+    return process.env.NEXT_PUBLIC_BASE_URL.replace(/\/$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  return "";
+};
+
 
 // Add contact prefix options
 const PREFIX_OPTIONS = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
@@ -282,6 +296,8 @@ export default function Home() {
   const [showMore, setShowMore] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [error, setError] = useState("");
+  const [exportValue, setExportValue] = useState<string | null>(null);
+  const [previewNano, setPreviewNano] = useState<string | null>(null);
 
   const [style, setStyle] = useState({
     shape: "square", // square, rounded, dots
@@ -436,6 +452,16 @@ export default function Home() {
     }
   }, [text, size, bgColor, fgColor]);
 
+  useEffect(() => {
+    if (text) {
+      // text hai toh ek hi baar nano id banao (jab tak text same rahe)
+      setPreviewNano((prev) => prev || generateNanoCode());
+    } else {
+      // text clear ho gaya toh preview bhi clear
+      setPreviewNano(null);
+    }
+  }, [text]);
+
   const generateContent = async () => {
     if (contentType === ContentTypes.CONTACT) {
       try {
@@ -470,13 +496,19 @@ export default function Home() {
   };
 
   const saveQRCode = async () => {
-    if (!user || !text) {
+    if (!user) {
       setError("Please sign in to save QR codes");
-      return false;
+      return null;
+    }
+
+    if (!text) {
+      setError("Please enter some content first");
+      return null;
     }
 
     try {
       setIsLoading(true);
+
       const qrData = {
         userId: user.uid,
         title,
@@ -493,12 +525,24 @@ export default function Home() {
         },
       };
 
-      await addDoc(collection(db, "qrcodes"), qrData);
-      return true;
+      // Generate unique nano code
+      let nanoId: string;
+
+      while (true) {
+        nanoId = generateNanoCode(); // 6-char ID
+        const ref = doc(db, "qrcodes", nanoId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          await setDoc(ref, qrData);
+          break;
+        }
+      }
+
+      return nanoId; // short ID returned
     } catch (error: any) {
       console.error("Error saving QR code:", error);
       setError("Failed to save QR code: " + (error.message || "Unknown error"));
-      return false;
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -547,8 +591,8 @@ export default function Home() {
 
         const img = new Image();
         await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
+          img.onload = resolve as any;
+          img.onerror = reject as any;
           img.src = url;
         });
 
@@ -562,9 +606,6 @@ export default function Home() {
         link.click();
         document.body.removeChild(link);
       }
-
-      await saveQRCode();
-      router.push("/dashboard/active");
     } catch (err) {
       console.error("Error:", err);
       setError("Failed to process QR code");
@@ -715,27 +756,27 @@ export default function Home() {
     );
   };
 
-  const handleInputInteraction = (e: any) => {
-    if (!user) {
-      e.preventDefault();
-      setShowAuthModal(true);
-      return;
-    }
-  };
+        const handleInputInteraction = (e: any) => {
+          if (!user) {
+            e.preventDefault();
+            setShowAuthModal(true);
+            return;
+          }
+        };
 
-  const renderContentInput = () => {
-    switch (contentType) {
-      case ContentTypes.PLAIN_TEXT:
-        return (
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onFocus={handleInputInteraction}
-            rows={5}
-            className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
-            placeholder="Enter your text"
-          />
-        );
+        const renderContentInput = () => {
+          switch (contentType) {
+            case ContentTypes.PLAIN_TEXT:
+              return (
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onFocus={handleInputInteraction}
+                  rows={5}
+                  className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="Enter your text"
+                />
+              );
 
       case ContentTypes.PDF:
       case ContentTypes.FILE:
@@ -903,98 +944,117 @@ export default function Home() {
             placeholder={`Enter ${contentType}`}
           />
         );
-    }
-  };
+        }
+      };
 
-  // New: frame renderer used by the preview
-  const renderQRFrame = () => {
-    if (!text) {
-      return (
-        <div className="flex flex-col items-center text-gray-400 gap-2">
-          <span className="text-4xl leading-none">+</span>
-          <p className="text-sm">Enter content to generate QR code</p>
-        </div>
-      );
-    }
-
-    const QRCore = (
-      <div className="relative inline-block">
-        <QRCode
-          value={text}
-          size={180}
-          bgColor={bgColor}
-          fgColor={fgColor}
-          level={qrLevel}
-          ref={qrRef}
-          style={{ width: 180, height: 180 }}
-          viewBox="0 0 180 180"
-          className={
-            style.shape === "rounded"
-              ? "rounded-2xl"
-              : style.shape === "dots"
-              ? "rounded-3xl"
-              : ""
+        // frame renderer used by the preview
+        const renderQRFrame = () => {
+          if (!text) {
+            return (
+              <div className="flex flex-col items-center text-gray-400 gap-2">
+                <span className="text-4xl leading-none">+</span>
+                <p className="text-sm">Enter content to generate QR code</p>
+              </div>
+            );
           }
-        />
 
-        {(logoImage || logoPreset) && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">
-              {logoImage ? (
-                <img
-                  src={logoImage}
-                  alt="logo"
-                  className="w-10 h-10 object-contain"
-                />
-              ) : (
-                <span className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-semibold">
-                  {logoPreset?.slice(0, 2).toUpperCase()}
-                </span>
+          
+          const qrValue = (() => {
+            if (
+              contentType === ContentTypes.SMS ||
+              contentType === ContentTypes.PHONE ||
+              contentType === ContentTypes.CONTACT
+            ) {
+              return text || "";
+            }
+
+            const origin = getBaseUrl();
+            return (
+              exportValue ||
+              (previewNano
+                ? `${origin}/qr/${previewNano}`
+                : `${origin}/qr/temp`)
+            );
+          })();
+
+          const QRCore = (
+            <div className="relative inline-block">
+              <QRCode
+                value={qrValue}
+                size={180}
+                bgColor={bgColor}
+                fgColor={fgColor}
+                level={qrLevel}
+                ref={qrRef}
+                style={{ width: 180, height: 180 }}
+                viewBox="0 0 180 180"
+                className={
+                  style.shape === "rounded"
+                    ? "rounded-2xl"
+                    : style.shape === "dots"
+                    ? "rounded-3xl"
+                    : ""
+                }
+              />
+
+              {(logoImage || logoPreset) && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">
+                    {logoImage ? (
+                      <img
+                        src={logoImage}
+                        alt="logo"
+                        className="w-10 h-10 object-contain"
+                      />
+                    ) : (
+                      <span className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-semibold">
+                        {logoPreset?.slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-          </div>
-        )}
-      </div>
-    );
+          );
+          switch (frameStyle) {
+            case "none":
+              return (
+                <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
+                  {QRCore}
+                </div>
+              );
 
-    switch (frameStyle) {
-      case "none":
-        return (
-          <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
-            {QRCore}
-          </div>
-        );
+            case "card":
+              return (
+                <div className="relative inline-flex flex-col items-center">
+                  <div className="bg-[radial-gradient(circle_at_top,_#e0f2fe,_#ffffff)] rounded-2xl shadow-[0_18px_40px_rgba(15,23,42,0.12)] p-6 border border-slate-100">
+                    <div className="rounded-xl p-4 flex items-center justify-center">
+                      {QRCore}
+                    </div>
+                  </div>
+                </div>
+              );
 
-      case "card":
-        return (
-          <div className="relative inline-flex flex-col items-center">
-            <div className="bg-[radial-gradient(circle_at_top,_#e0f2fe,_#ffffff)] rounded-2xl shadow-[0_18px_40px_rgba(15,23,42,0.12)] p-6 border border-slate-100">
-              <div className=" rounded-xl p-4 flex items-center justify-center">
-                {QRCore}
-              </div>
-            </div>
-          </div>
-        );
+            case "soft":
+              return (
+                <div className="relative inline-flex items-center justify-center">
+                  <div className="p-[3px] rounded-l bg-gradient-to-br from-sky-400 via-indigo-500 to-fuchsia-500">
+                    <div className="rounded-full p-5 shadow-[0_18px_40px_rgba(15,23,42,0.18)] flex items-center justify-center">
+                      {QRCore}
+                    </div>
+                  </div>
+                </div>
+              );
 
-      case "soft":
-        return (
-          <div className="relative inline-flex items-center justify-center">
-            <div className="p-[3px] rounded-l bg-gradient-to-br from-sky-400 via-indigo-500 to-fuchsia-500">
-              <div className=" rounded-full p-5 shadow-[0_18px_40px_rgba(15,23,42,0.18)] flex items-center justify-center">
-                {QRCore}
-              </div>
-            </div>
-          </div>
-        );
+            default:
+              return (
+                <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
+                  {QRCore}
+                </div>
+              );
+          }
+        };
 
-      default:
-        return (
-          <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
-            {QRCore}
-          </div>
-        );
-    }
-  };
 
   const handleDownloadAndNext = async (format: "png" | "svg") => {
     if (planLoading) {
@@ -1010,17 +1070,52 @@ export default function Home() {
       return;
     }
 
+    // 🔹 Extra validation for SOCIALS type
+    if (contentType === ContentTypes.SOCIALS) {
+      try {
+        const data = text ? JSON.parse(text) : {};
+        const platform = data.selectedPlatform;
+        const url = platform ? data[platform] : "";
+
+        if (!url) {
+          setError(
+            "Please add at least one social media URL before generating the QR."
+          );
+          return;
+        }
+      } catch (e) {
+        console.error("Invalid socials JSON:", e);
+        setError(
+          "Something went wrong with your social links. Please re-enter."
+        );
+        return;
+      }
+    }
+
+    const nanoId = await saveQRCode();
+    if (!nanoId) return;
+
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : getBaseUrl();
+    const shortUrl = `${origin}/qr/${nanoId}`;
+
     try {
+      setExportValue(shortUrl);
+      await new Promise((res) => setTimeout(res, 50)); // allow QR to re-render
+
       await downloadQR(format);
+
       router.push("/dashboard/active");
     } catch (error) {
       console.error("Error:", error);
       setError("Failed to process QR code");
+    } finally {
+      setExportValue(null);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white-50 to-pink-50 flex flex-col items-center justify-center p-4 gap-6">
+    <div className="min-h-screen bg-gradient-to-br from-blue-100 via-white-50 to-pink-50 flex flex-col items-center justify-center p-4 gap-6">
       <Head>
         <title>QR Code Generator</title>
       </Head>
@@ -1048,10 +1143,10 @@ export default function Home() {
                     onClick={() =>
                       handleContentTypeChange(value as ContentType)
                     }
-                    className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-l text-[13px] font-semibold transition-all border
+                    className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-l text-[13px] font-semibold transition-all
               ${
                 contentType === value
-                  ? "bg-sky-50 text-blue-600 border-blue-500 shadow-sm"
+                  ? "bg-sky-100 text-blue-600 "
                   : "bg-transparent text-slate-600 border-transparent hover:bg-white hover:text-slate-900"
               }
             `}
