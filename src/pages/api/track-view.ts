@@ -1,17 +1,21 @@
+// pages/api/track-view.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import { adminDb } from "@/lib/firebase-admin";
 import { UAParser } from "ua-parser-js";
+import { FieldValue } from "firebase-admin/firestore";
 
+// Helper: get geo/location info from IP
 async function getGeoFromIP(ip: string | null) {
   if (!ip) return null;
 
   const cleanIp = ip.split(",")[0].trim();
 
   try {
-    // Example using ipapi.co (you can switch to any other provider)
     const res = await fetch(`https://ipapi.co/${cleanIp}/json/`);
 
-    if (!res.ok) return { ip: cleanIp };
+    if (!res.ok) {
+      return { ip: cleanIp };
+    }
 
     const data = await res.json();
 
@@ -40,20 +44,27 @@ export default async function handler(
 
   const { qrId } = req.body;
 
-  if (!qrId) {
+  if (!qrId || typeof qrId !== "string") {
     return res.status(400).json({ error: "qrId is required" });
   }
 
   try {
-    // Get client IP
+    console.log("[track-view] called for qrId:", qrId);
+
+    if (!adminDb) {
+      console.error("[track-view] adminDb not configured");
+      return res.status(500).json({ error: "adminDb not configured" });
+    }
+
+    // 1. Get client IP
     const ipHeader =
-      (req.headers["x-forwarded-for"] as string) ||
-      (req.headers["x-real-ip"] as string) ||
-      req.socket.remoteAddress ||
+      (req.headers["x-forwarded-for"] as string | undefined) ||
+      (req.headers["x-real-ip"] as string | undefined) ||
+      (req.socket.remoteAddress as string | null) ||
       null;
 
-    // Get browser / device info
-    const uaString = req.headers["user-agent"] || "";
+    // 2. Browser / device info from User-Agent
+    const uaString = (req.headers["user-agent"] as string) || "";
     const parser = new UAParser(uaString);
     const uaResult = parser.getResult();
 
@@ -73,11 +84,11 @@ export default async function handler(
       model: uaResult.device.model || null,
     };
 
-    //  Get approx location from IP
+    // 3. Approx location from IP
     const geo = await getGeoFromIP(ipHeader);
 
-    //  Add scan record
-    await adminDb.collection("scans").add({
+    // 4. Add scan record in "scans" collection
+    const scanDoc = await adminDb.collection("scans").add({
       qrId,
       timestamp: new Date().toISOString(),
       userAgent: uaString,
@@ -85,22 +96,31 @@ export default async function handler(
       os: osInfo,
       device: deviceInfo,
       ipInfo: geo,
-      referrer: req.headers.referer || null,
+      referrer: (req.headers.referer as string) || null,
     });
 
-    //  Optionally: increment total scan count on QR doc
+    console.log("[track-view] scan doc added:", scanDoc.id);
+
+    // 5. Increment total scan count on QR doc in "qrcodes"
     const qrRef = adminDb.collection("qrcodes").doc(qrId);
-    await adminDb.runTransaction(async (transaction) => {
-      const qrDoc = await transaction.get(qrRef);
-      if (!qrDoc.exists) return;
 
-      const currentScans = qrDoc.data()?.scans || 0;
-      transaction.update(qrRef, { scans: currentScans + 1 });
-    });
+    await qrRef.set(
+      {
+        scans: FieldValue.increment(1),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
 
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    console.error("Error tracking scan:", error);
-    return res.status(500).json({ error: "Failed to track scan" });
+    console.log("[track-view] scan count incremented for", qrId);
+
+    return res.status(200).json({ success: true, scanId: scanDoc.id });
+  } catch (error: any) {
+    console.error("[track-view] Error tracking scan:", error);
+    const payload: any = { error: "Failed to track scan" };
+    if (process.env.NODE_ENV === "development") {
+      payload.details = error?.message || String(error);
+    }
+    return res.status(500).json(payload);
   }
 }

@@ -1,132 +1,184 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Admin access function
+
+    // Helper: check if auth token has "admin" custom claim
     function isAdmin() {
       return request.auth != null && request.auth.token.admin == true;
     }
 
-    // Allow admin to access all documents
-    match /{document=**} {
-      allow read, write: if isAdmin();
+    /**********************
+     * QR CODES
+     **********************/
+    match /qrcodes/{qrId} {
+      // Any logged-in user can create a QR
+      allow create: if request.auth != null;
+
+      // Anyone can read a QR document (so redirects work publicly)
+      allow read: if true;
+
+      // Allow public update for scan count (admin SDK + client fallback)
+      allow update: if true;
+
+      // Only owner can delete
+      allow delete: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
     }
-    
-    // Add contact collection rules
+
+    /**********************
+     * SCANS (analytics)
+     **********************/
+    match /scans/{scanId} {
+      // ✅ Allow anyone to read scans (your UI is already behind AuthGuard)
+      allow read: if true;
+
+      // Writes are normally from admin SDK (which bypasses rules),
+      // but we allow client create too if ever needed.
+      allow create: if true;
+
+      // Do not allow client updates/deletes
+      allow update, delete: if false;
+    }
+
+    /**********************
+     * CONTACTS
+     **********************/
     match /contacts/{contactId} {
       allow create: if request.auth != null;
-      allow read: if true; // Allow public read for contact view pages
-      allow write: if request.auth != null && request.auth.uid == resource.data.userId;
-    }
-    
-    match /qrcodes/{qrId} {
-      allow create: if request.auth != null;
-      allow read: if true; // Allow public access to read QR codes
-      allow update: if true; // Allow public access to update scan count
-      allow delete: if request.auth != null 
-        && resource.data.userId == request.auth.uid;
+
+      // Public read for contact view pages
+      allow read: if true;
+
+      // Only owner can write
+      allow write: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
     }
 
+    /**********************
+     * USERS
+     **********************/
     match /users/{userId} {
       allow read: if request.auth != null && (
-        request.auth.uid == userId ||
-        isAdmin()
+        request.auth.uid == userId || isAdmin()
       );
+
       allow write: if request.auth != null && (
-        request.auth.uid == userId ||
-        isAdmin()
+        request.auth.uid == userId || isAdmin()
       );
     }
 
-    // Additional collections needed for admin functionality
+    /**********************
+     * PLANS
+     **********************/
     match /plans/{planId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
+    /**********************
+     * SUBSCRIPTIONS
+     **********************/
     match /subscriptions/{subId} {
       allow read: if request.auth != null && (
-        resource.data.userId == request.auth.uid ||
-        isAdmin()
+        resource.data.userId == request.auth.uid || isAdmin()
       );
       allow write: if isAdmin();
     }
 
+    /**********************
+     * TRANSACTIONS
+     **********************/
     match /transactions/{transId} {
       allow read: if request.auth != null && (
-        resource.data.userId == request.auth.uid ||
-        isAdmin()
+        resource.data.userId == request.auth.uid || isAdmin()
       );
+
+      // Clients can create their own transaction record
       allow create: if request.auth != null;
+
+      // Only admin can update or delete
       allow update, delete: if isAdmin();
     }
 
+    /**********************
+     * PAYMENT GATEWAYS
+     **********************/
     match /payment_gateways/{gatewayId} {
-      allow read: if request.auth != null && 
+      allow read: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      allow write: if request.auth != null && 
+
+      allow write: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    /**********************
+     * GLOBAL SETTINGS
+     **********************/
     match /settings/global {
       allow read: if true;
-      allow write: if request.auth != null && 
+      allow write: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    /**********************
+     * EMAIL JOBS
+     **********************/
     match /email_jobs/{jobId} {
-      // Allow creating email jobs if user is admin
-      allow create: if request.auth != null && 
+      // Only admin can create/read/update jobs
+      allow create: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      
-      // Allow reading and updating jobs if user is admin
-      allow read, update: if request.auth != null && 
+
+      allow read, update: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    /**********************
+     * LOGIN ATTEMPTS (server only)
+     **********************/
     match /loginAttempts/{attempt} {
-      allow read, write: if false; // Only accessible through server
+      allow read, write: if false;
     }
 
-    // Short URL rules
+    /**********************
+     * SHORT URLS
+     **********************/
     match /shorturls/{document} {
-      allow create: if request.auth != null 
-        && request.resource.data.userId == request.auth.uid;
-      
-      allow read: if true; // Allow public access for redirects
-      
-      allow update: if true; // Allow public updates for click counting
-      
-      allow delete: if request.auth != null 
-        && resource.data.userId == request.auth.uid;
-        
-      function isValidShortUrl() {
-        let data = request.resource.data;
-        return data.shortCode is string
-          && data.originalUrl is string
-          && data.createdAt is string
-          && data.userId is string
-          && data.clicks is number;
-      }
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Public read for redirect
+      allow read: if true;
+
+      // Public update for click counting
+      allow update: if true;
+
+      allow delete: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
     }
 
-    // Banner rules
+    /**********************
+     * BANNERS
+     **********************/
     match /banners/{bannerId} {
-      allow read: if true; // Public access for reading banners
-      allow write: if request.auth != null && 
+      allow read: if true;
+      allow write: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
 
-    // Virtual Tour rules
+    /**********************
+     * VIRTUAL TOURS
+     **********************/
     match /virtualTours/{tourId} {
       allow read: if true;
       allow write: if request.auth != null;
-      
+
       match /scenes/{sceneId} {
-        allow read: if get(/databases/$(database)/documents/virtualTours/$(tourId)).data.isPublic == true || 
-                     (request.auth != null && 
-                      get(/databases/$(database)/documents/virtualTours/$(tourId)).data.userId == request.auth.uid);
-        allow write: if request.auth != null && 
-                      get(/databases/$(database)/documents/virtualTours/$(tourId)).data.userId == request.auth.uid;
+        allow read: if get(/databases/$(database)/documents/virtualTours/$(tourId)).data.isPublic == true ||
+          (request.auth != null &&
+            get(/databases/$(database)/documents/virtualTours/$(tourId)).data.userId == request.auth.uid);
+
+        allow write: if request.auth != null &&
+          get(/databases/$(database)/documents/virtualTours/$(tourId)).data.userId == request.auth.uid;
       }
     }
   }

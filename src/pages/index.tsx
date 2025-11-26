@@ -26,12 +26,11 @@ const getBaseUrl = () => {
   return "";
 };
 
-
 // Add contact prefix options
 const PREFIX_OPTIONS = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
 
 // Design tabs
-type DesignTab = "FRAME" | "SHAPE" | "LOGO" | "LEVEL";
+type DesignTab = "FRAME" | "SHAPE" | "LOGO";
 
 // Download icon
 const DownloadIcon = () => (
@@ -297,18 +296,17 @@ export default function Home() {
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [error, setError] = useState("");
   const [exportValue, setExportValue] = useState<string | null>(null);
-  const [previewNano, setPreviewNano] = useState<string | null>(null);
+  const [nanoId, setNanoId] = useState<string | null>(null); // real short ID for this QR
 
   const [style, setStyle] = useState({
     shape: "square", // square, rounded, dots
   });
 
-  // Design tab + logo + level state
+  // Design tab + logo state
   const [designTab, setDesignTab] = useState<DesignTab>("FRAME");
   const [frameStyle, setFrameStyle] = useState<"none" | "card" | "soft">(
     "none"
   );
-  const [qrLevel, setQrLevel] = useState<"L" | "M" | "Q" | "H">("H");
   const [logoImage, setLogoImage] = useState<string | null>(null);
   const [logoPreset, setLogoPreset] = useState<string | null>(null);
 
@@ -383,9 +381,10 @@ export default function Home() {
     setFileUrl("");
     setLogoImage(null);
     setLogoPreset(null);
-    setQrLevel("H");
     setFrameStyle("none");
     setDesignTab("FRAME");
+    setNanoId(null); // reset nano id too
+    setExportValue(null);
   };
 
   const handleContentTypeChange = (newType: ContentType) => {
@@ -452,16 +451,6 @@ export default function Home() {
     }
   }, [text, size, bgColor, fgColor]);
 
-  useEffect(() => {
-    if (text) {
-      // text hai toh ek hi baar nano id banao (jab tak text same rahe)
-      setPreviewNano((prev) => prev || generateNanoCode());
-    } else {
-      // text clear ho gaya toh preview bhi clear
-      setPreviewNano(null);
-    }
-  }, [text]);
-
   const generateContent = async () => {
     if (contentType === ContentTypes.CONTACT) {
       try {
@@ -495,6 +484,7 @@ export default function Home() {
     };
   };
 
+  // Save or update QR doc, and ensure we have a stable nanoId
   const saveQRCode = async () => {
     if (!user) {
       setError("Please sign in to save QR codes");
@@ -525,20 +515,29 @@ export default function Home() {
         },
       };
 
-      // Generate unique nano code
-      let nanoId: string;
+      let finalId = nanoId;
 
-      while (true) {
-        nanoId = generateNanoCode(); // 6-char ID
-        const ref = doc(db, "qrcodes", nanoId);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) {
-          await setDoc(ref, qrData);
-          break;
+      if (finalId) {
+        // If we already created this QR earlier, just update the same doc
+        const ref = doc(db, "qrcodes", finalId);
+        await setDoc(ref, qrData, { merge: true });
+      } else {
+        // Create a new nanoId + doc
+        while (true) {
+          const candidate = generateNanoCode(); // e.g. 6-char ID
+          const ref = doc(db, "qrcodes", candidate);
+          const snap = await getDoc(ref);
+
+          if (!snap.exists()) {
+            await setDoc(ref, qrData);
+            finalId = candidate;
+            setNanoId(candidate); // store nanoId for preview + download
+            break;
+          }
         }
       }
 
-      return nanoId; // short ID returned
+      return finalId;
     } catch (error: any) {
       console.error("Error saving QR code:", error);
       setError("Failed to save QR code: " + (error.message || "Unknown error"));
@@ -756,27 +755,27 @@ export default function Home() {
     );
   };
 
-        const handleInputInteraction = (e: any) => {
-          if (!user) {
-            e.preventDefault();
-            setShowAuthModal(true);
-            return;
-          }
-        };
+  const handleInputInteraction = (e: any) => {
+    if (!user) {
+      e.preventDefault();
+      setShowAuthModal(true);
+      return;
+    }
+  };
 
-        const renderContentInput = () => {
-          switch (contentType) {
-            case ContentTypes.PLAIN_TEXT:
-              return (
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onFocus={handleInputInteraction}
-                  rows={5}
-                  className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="Enter your text"
-                />
-              );
+  const renderContentInput = () => {
+    switch (contentType) {
+      case ContentTypes.PLAIN_TEXT:
+        return (
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onFocus={handleInputInteraction}
+            rows={5}
+            className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="Enter your text"
+          />
+        );
 
       case ContentTypes.PDF:
       case ContentTypes.FILE:
@@ -944,117 +943,124 @@ export default function Home() {
             placeholder={`Enter ${contentType}`}
           />
         );
-        }
-      };
+    }
+  };
 
-        // frame renderer used by the preview
-        const renderQRFrame = () => {
-          if (!text) {
-            return (
-              <div className="flex flex-col items-center text-gray-400 gap-2">
-                <span className="text-4xl leading-none">+</span>
-                <p className="text-sm">Enter content to generate QR code</p>
-              </div>
-            );
+  // frame renderer used by the preview
+  const renderQRFrame = () => {
+    if (!text) {
+      return (
+        <div className="flex flex-col items-center text-gray-400 gap-2">
+          <span className="text-4xl leading-none">+</span>
+          <p className="text-sm">Enter content to generate QR code</p>
+        </div>
+      );
+    }
+
+    const qrValue = (() => {
+      // For these types we MUST keep the raw schemes/text
+      if (
+        contentType === ContentTypes.SMS ||
+        contentType === ContentTypes.PHONE ||
+        contentType === ContentTypes.CONTACT
+      ) {
+        return text || "";
+      }
+
+      const origin = getBaseUrl();
+
+      // During download we force a specific value
+      if (exportValue) {
+        return exportValue;
+      }
+
+      // Once saved, always use the short URL → low-density QR
+      if (nanoId) {
+        return `${origin}/qr/${nanoId}`;
+      }
+
+      // Before first save: just show the raw content as-is
+      return text || "";
+    })();
+
+    const QRCore = (
+      <div className="relative inline-block">
+        <QRCode
+          value={qrValue}
+          size={180}
+          bgColor={bgColor}
+          fgColor={fgColor}
+          level="L" // 7% error correction (lowest density – easiest for moving scan)
+          ref={qrRef}
+          style={{ width: 180, height: 180 }}
+          viewBox="0 0 180 180"
+          className={
+            style.shape === "rounded"
+              ? "rounded-2xl"
+              : style.shape === "dots"
+              ? "rounded-3xl"
+              : ""
           }
+        />
 
-          
-          const qrValue = (() => {
-            if (
-              contentType === ContentTypes.SMS ||
-              contentType === ContentTypes.PHONE ||
-              contentType === ContentTypes.CONTACT
-            ) {
-              return text || "";
-            }
-
-            const origin = getBaseUrl();
-            return (
-              exportValue ||
-              (previewNano
-                ? `${origin}/qr/${previewNano}`
-                : `${origin}/qr/temp`)
-            );
-          })();
-
-          const QRCore = (
-            <div className="relative inline-block">
-              <QRCode
-                value={qrValue}
-                size={180}
-                bgColor={bgColor}
-                fgColor={fgColor}
-                level={qrLevel}
-                ref={qrRef}
-                style={{ width: 180, height: 180 }}
-                viewBox="0 0 180 180"
-                className={
-                  style.shape === "rounded"
-                    ? "rounded-2xl"
-                    : style.shape === "dots"
-                    ? "rounded-3xl"
-                    : ""
-                }
-              />
-
-              {(logoImage || logoPreset) && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">
-                    {logoImage ? (
-                      <img
-                        src={logoImage}
-                        alt="logo"
-                        className="w-10 h-10 object-contain"
-                      />
-                    ) : (
-                      <span className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-semibold">
-                        {logoPreset?.slice(0, 2).toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-                </div>
+        {(logoImage || logoPreset) && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">
+              {logoImage ? (
+                <img
+                  src={logoImage}
+                  alt="logo"
+                  className="w-10 h-10 object-contain"
+                />
+              ) : (
+                <span className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-semibold">
+                  {logoPreset?.slice(0, 2).toUpperCase()}
+                </span>
               )}
             </div>
-          );
-          switch (frameStyle) {
-            case "none":
-              return (
-                <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
-                  {QRCore}
-                </div>
-              );
+          </div>
+        )}
+      </div>
+    );
 
-            case "card":
-              return (
-                <div className="relative inline-flex flex-col items-center">
-                  <div className="bg-[radial-gradient(circle_at_top,_#e0f2fe,_#ffffff)] rounded-2xl shadow-[0_18px_40px_rgba(15,23,42,0.12)] p-6 border border-slate-100">
-                    <div className="rounded-xl p-4 flex items-center justify-center">
-                      {QRCore}
-                    </div>
-                  </div>
-                </div>
-              );
+    switch (frameStyle) {
+      case "none":
+        return (
+          <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
+            {QRCore}
+          </div>
+        );
 
-            case "soft":
-              return (
-                <div className="relative inline-flex items-center justify-center">
-                  <div className="p-[3px] rounded-l bg-gradient-to-br from-sky-400 via-indigo-500 to-fuchsia-500">
-                    <div className="rounded-full p-5 shadow-[0_18px_40px_rgba(15,23,42,0.18)] flex items-center justify-center">
-                      {QRCore}
-                    </div>
-                  </div>
-                </div>
-              );
+      case "card":
+        return (
+          <div className="relative inline-flex flex-col items-center">
+            <div className="bg-[radial-gradient(circle_at_top,_#e0f2fe,_#ffffff)] rounded-2xl shadow-[0_18px_40px_rgba(15,23,42,0.12)] p-6 border border-slate-100">
+              <div className="rounded-xl p-4 flex items-center justify-center">
+                {QRCore}
+              </div>
+            </div>
+          </div>
+        );
 
-            default:
-              return (
-                <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
-                  {QRCore}
-                </div>
-              );
-          }
-        };
+      case "soft":
+        return (
+          <div className="relative inline-flex items-center justify-center">
+            <div className="p-[3px] rounded-l bg-gradient-to-br from-sky-400 via-indigo-500 to-fuchsia-500">
+              <div className="rounded-full p-5 shadow-[0_18px_40px_rgba(15,23,42,0.18)] flex items-center justify-center">
+                {QRCore}
+              </div>
+            </div>
+          </div>
+        );
 
+      default:
+        return (
+          <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
+            {QRCore}
+          </div>
+        );
+    }
+  };
 
   const handleDownloadAndNext = async (format: "png" | "svg") => {
     if (planLoading) {
@@ -1070,7 +1076,7 @@ export default function Home() {
       return;
     }
 
-    // 🔹 Extra validation for SOCIALS type
+    // Extra validation for SOCIALS type
     if (contentType === ContentTypes.SOCIALS) {
       try {
         const data = text ? JSON.parse(text) : {};
@@ -1092,14 +1098,15 @@ export default function Home() {
       }
     }
 
-    const nanoId = await saveQRCode();
-    if (!nanoId) return;
+    const id = await saveQRCode(); // ensures nanoId is set/updated
+    if (!id) return;
 
     const origin =
       typeof window !== "undefined" ? window.location.origin : getBaseUrl();
-    const shortUrl = `${origin}/qr/${nanoId}`;
+    const shortUrl = `${origin}/qr/${id}`;
 
     try {
+      // For export, force QR to use the short URL
       setExportValue(shortUrl);
       await new Promise((res) => setTimeout(res, 50)); // allow QR to re-render
 
@@ -1244,7 +1251,6 @@ export default function Home() {
                   { key: "FRAME", label: "Frame" },
                   { key: "SHAPE", label: "Shape" },
                   { key: "LOGO", label: "Logo" },
-                  { key: "LEVEL", label: "Level" },
                 ].map((tab) => (
                   <button
                     key={tab.key}
@@ -1415,43 +1421,6 @@ export default function Home() {
                         onChange={handleLogoUpload}
                       />
                     </label>
-                  </div>
-                </div>
-              )}
-
-              {/* LEVEL TAB */}
-              {designTab === "LEVEL" && (
-                <div className="space-y-4 border border-gray-100 p-5 rounded-[10px]">
-                  <p className="text-sm font-medium text-gray-800">
-                    Select a level
-                  </p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {[
-                      { id: "Q", label: "Level Q", percent: "25%" },
-                      { id: "H", label: "Level H", percent: "30%" },
-                      { id: "M", label: "Level M", percent: "15%" },
-                      { id: "L", label: "Level L", percent: "7%" },
-                    ].map((lvl) => (
-                      <button
-                        key={lvl.id}
-                        onClick={() =>
-                          setQrLevel(lvl.id as "L" | "M" | "Q" | "H")
-                        }
-                        className={`rounded-2xl border p-3 text-left space-y-2 ${
-                          qrLevel === lvl.id
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-200 bg-gray-50 hover:bg-gray-100"
-                        }`}
-                      >
-                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-md mb-1" />
-                        <p className="text-xs font-medium text-gray-800">
-                          {lvl.label}
-                        </p>
-                        <span className="inline-flex px-2 py-0.5 rounded-lg border text-[10px] font-semibold text-gray-600 bg-white">
-                          {lvl.percent}
-                        </span>
-                      </button>
-                    ))}
                   </div>
                 </div>
               )}

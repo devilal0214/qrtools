@@ -48,22 +48,66 @@ export default function QRPage() {
           return;
         }
 
-        //  Increment scan count (client side)
-        try {
-          await updateDoc(ref, { scans: increment(1) });
-        } catch (e) {
-          console.error("Error incrementing scans:", e);
-        }
+        //  Increment scan count on server via API (admin SDK) to keep
+        //  detailed analytics in sync (do not increment client-side to
+        //  avoid double counting or permission issues)
 
-        //  Track detailed view (IP, browser, etc) via API
+        //  Track detailed view (IP, browser, etc) via API. We use navigator.sendBeacon
+        //  when possible to ensure the tracking request completes even if we
+        //  immediately redirect the user (sendBeacon is more reliable for this).
+        const trackPayload = JSON.stringify({ qrId: id });
         try {
-          await fetch("/api/track-view", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ qrId: id }),
-          });
+          if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
+            const blob = new Blob([trackPayload], { type: "application/json" });
+            const beaconResult = (navigator as any).sendBeacon(
+              "/api/track-view",
+              blob
+            );
+            console.log("sendBeacon result:", beaconResult);
+            if (!beaconResult) {
+              // If sendBeacon failed, fall back to fetch
+              const resp = await fetch("/api/track-view", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: trackPayload,
+              });
+              const json = await resp.json().catch(() => null);
+              console.log(
+                "track-view response (fetch fallback):",
+                resp.status,
+                json
+              );
+              if (!resp.ok) {
+                try {
+                  await updateDoc(ref, { scans: increment(1) });
+                } catch (e) {
+                  console.error("Error incrementing scans fallback:", e);
+                }
+              }
+            }
+          } else {
+            const resp = await fetch("/api/track-view", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: trackPayload,
+            });
+            const json = await resp.json().catch(() => null);
+            console.log("track-view response:", resp.status, json);
+            if (!resp.ok) {
+              try {
+                await updateDoc(ref, { scans: increment(1) });
+              } catch (err) {
+                console.error("Error incrementing scans fallback:", err);
+              }
+            }
+          }
         } catch (e) {
           console.error("Error tracking view:", e);
+          try {
+            await updateDoc(ref, { scans: increment(1) });
+          } catch (err) {
+            console.error("Error incrementing scans fallback:", err);
+          }
         }
 
         const type = (data.type || "").toUpperCase();

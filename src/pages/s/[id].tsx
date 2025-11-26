@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import QRCode from 'react-qr-code';
-import Head from 'next/head';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
+import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import QRCode from "react-qr-code";
+import Head from "next/head";
 
 interface QRData {
   title?: string;
@@ -21,7 +21,7 @@ export default function QRCodeViewer() {
   const router = useRouter();
   const { id } = router.query;
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [qrData, setQRData] = useState<QRData | null>(null);
   const [contents, setContents] = useState<string[]>([]);
@@ -29,33 +29,87 @@ export default function QRCodeViewer() {
   useEffect(() => {
     const fetchQRCode = async () => {
       if (!id) return;
-      
+
       try {
-        const docRef = doc(db, 'qrcodes', id as string);
+        const docRef = doc(db, "qrcodes", id as string);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
           const data = docSnap.data() as QRData;
           setQRData(data);
-          
-          if (data.type === 'MULTI_URL') {
-            setContents(data.content.split('\n').filter(Boolean));
+
+          if (data.type === "MULTI_URL") {
+            setContents(data.content.split("\n").filter(Boolean));
           } else {
             setContents([data.content]);
           }
 
-          // Track view
-          await fetch('/api/track-view', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ qrId: id })
-          });
+          // Track view via server-side API to record details and increment
+          // the scan count on the qrcodes document. We rely on the admin
+          // endpoint rather than client-side updates to prevent double
+          // counting and to ensure the scan is logged with IP/device data.
+          try {
+            const payload = JSON.stringify({ qrId: id });
+            if (
+              typeof window !== "undefined" &&
+              (navigator as any).sendBeacon
+            ) {
+              const blob = new Blob([payload], { type: "application/json" });
+              const beaconResult = (navigator as any).sendBeacon(
+                "/api/track-view",
+                blob
+              );
+              console.log("sendBeacon result (s page):", beaconResult);
+              if (!beaconResult) {
+                const resp = await fetch("/api/track-view", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: payload,
+                });
+                const json = await resp.json().catch(() => null);
+                console.log(
+                  "track-view response (s page fallback):",
+                  resp.status,
+                  json
+                );
+                if (!resp.ok) {
+                  try {
+                    await updateDoc(docRef, { scans: increment(1) });
+                  } catch (err) {
+                    console.error("Error incrementing scans fallback:", err);
+                  }
+                }
+              }
+            } else {
+              const resp = await fetch("/api/track-view", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: payload,
+              });
+              const json = await resp.json().catch(() => null);
+              console.log("track-view response (s page):", resp.status, json);
+              if (!resp.ok) {
+                try {
+                  await updateDoc(docRef, { scans: increment(1) });
+                } catch (err) {
+                  console.error("Error incrementing scans fallback:", err);
+                }
+              }
+            }
+          } catch (err) {
+            console.error("Error tracking view:", err);
+            try {
+              await updateDoc(docRef, { scans: increment(1) });
+            } catch (e) {
+              console.error("Error incrementing scans fallback:", e);
+            }
+          }
         } else {
-          setError('QR code not found');
+          setError("QR code not found");
         }
       } catch (error) {
-        console.error('Error:', error);
-        setError('Failed to fetch QR code');
+        console.error("Error:", error);
+        setError("Failed to fetch QR code");
       } finally {
         setLoading(false);
       }
@@ -76,14 +130,6 @@ export default function QRCodeViewer() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-      </div>
-    );
-  }
-
   if (error || !qrData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -98,13 +144,15 @@ export default function QRCodeViewer() {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4">
       <Head>
-        <title>{qrData.title || 'View QR Code'}</title>
+        <title>{qrData.title || "View QR Code"}</title>
       </Head>
 
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-xl shadow-lg p-8">
           {qrData.title && (
-            <h1 className="text-2xl font-bold text-center mb-8">{qrData.title}</h1>
+            <h1 className="text-2xl font-bold text-center mb-8">
+              {qrData.title}
+            </h1>
           )}
 
           <div className="flex flex-col items-center space-y-8">
@@ -114,21 +162,38 @@ export default function QRCodeViewer() {
                   onClick={handlePrevious}
                   className="absolute left-0 p-2 rounded-full bg-white shadow-lg hover:bg-gray-50"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 19l-7-7 7-7"
+                    />
                   </svg>
                 </button>
               )}
 
               <QRCode
                 value={contents[currentIndex]}
-                size={qrData.settings?.size || 256}
-                bgColor={qrData.settings?.bgColor || '#FFFFFF'}
-                fgColor={qrData.settings?.fgColor || '#000000'}
-                level="H"
+                size={qrData.settings?.size || 180}
+                bgColor={qrData.settings?.bgColor || "#FFFFFF"}
+                fgColor={qrData.settings?.fgColor || "#000000"}
+                level="L"
+                style={{
+                  width: qrData.settings?.size || 180,
+                  height: qrData.settings?.size || 180,
+                }}
+                viewBox={`0 0 ${qrData.settings?.size || 180} ${
+                  qrData.settings?.size || 180
+                }`}
                 className={`
-                  ${qrData.settings?.shape === 'rounded' ? 'rounded-2xl' : ''}
-                  ${qrData.settings?.shape === 'dots' ? 'rounded-full' : ''}
+                  ${qrData.settings?.shape === "rounded" ? "rounded-2xl" : ""}
+                  ${qrData.settings?.shape === "dots" ? "rounded-3xl" : ""}
                 `}
               />
 
@@ -137,8 +202,18 @@ export default function QRCodeViewer() {
                   onClick={handleNext}
                   className="absolute right-0 p-2 rounded-full bg-white shadow-lg hover:bg-gray-50"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5l7 7-7 7"
+                    />
                   </svg>
                 </button>
               )}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 interface QRCode {
@@ -57,6 +57,8 @@ export default function ScanAnalyticsModal({
 }: ScanAnalyticsModalProps) {
   const [loading, setLoading] = useState(true);
   const [scans, setScans] = useState<ScanRecord[]>([]);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [locationStats, setLocationStats] = useState<LocationStat[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<LocationStat | null>(
     null
@@ -66,9 +68,11 @@ export default function ScanAnalyticsModal({
     const fetchScans = async () => {
       try {
         setLoading(true);
+
         const q = query(
           collection(db, "scans"),
-          where("qrId", "==", qrCode.id)
+          where("qrId", "==", qrCode.id),
+          orderBy("timestamp", "desc")
         );
 
         const snap = await getDocs(q);
@@ -112,8 +116,14 @@ export default function ScanAnalyticsModal({
 
         setLocationStats(statsArray);
         setSelectedLocation(statsArray[0] || null);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error fetching scan analytics:", err);
+        setErrorMessage(err?.message || String(err));
+        // If the Firestore client read fails due to security rules, surface a
+        // friendly message so users know why analytics might be empty.
+        if (err?.code === "permission-denied") {
+          setPermissionDenied(true);
+        }
       } finally {
         setLoading(false);
       }
@@ -152,6 +162,16 @@ export default function ScanAnalyticsModal({
             <div className="flex items-center justify-center py-10">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
+          ) : permissionDenied ? (
+            <p className="text-sm text-gray-500 text-center py-6">
+              You don't have permission to view analytics for this QR code.
+              Ensure you are the owner of the QR or your plan includes
+              analytics.
+            </p>
+          ) : errorMessage ? (
+            <p className="text-sm text-gray-500 text-center py-6">
+              {errorMessage}
+            </p>
           ) : scans.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-6">
               No scans recorded yet for this QR code.
@@ -163,7 +183,7 @@ export default function ScanAnalyticsModal({
                 <div className="border rounded-xl p-4">
                   <p className="text-xs text-gray-500">Total Scans</p>
                   <p className="text-2xl font-bold text-gray-900 mt-1">
-                    {scans.length}
+                    {qrCode.scans ?? scans.length}
                   </p>
                 </div>
                 <div className="border rounded-xl p-4">
@@ -233,7 +253,7 @@ export default function ScanAnalyticsModal({
                   <h4 className="text-sm font-semibold text-gray-800 mb-3">
                     Scans in{" "}
                     <span className="text-blue-600">
-                      {selectedLocation?.key || "selected location"}
+                      {selectedLocation?.key || "all locations"}
                     </span>
                   </h4>
                   <div className="border rounded-xl max-h-64 overflow-y-auto">
