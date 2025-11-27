@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { EyeIcon, PencilIcon, PauseIcon } from "@heroicons/react/24/outline";
-
+ 
 interface QRCode {
   id: string;
   type: string;
