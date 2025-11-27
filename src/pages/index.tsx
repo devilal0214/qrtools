@@ -983,17 +983,18 @@ export default function Home() {
       return text || "";
     })();
 
+    const QR_PIXEL_SIZE = 256; 
     const QRCore = (
       <div className="relative inline-block">
         <QRCode
           value={qrValue}
-          size={180}
+          size={QR_PIXEL_SIZE}
           bgColor={bgColor}
           fgColor={fgColor}
-          level="L" // 7% error correction (lowest density – easiest for moving scan)
+          level="L" // lowest density
           ref={qrRef}
-          style={{ width: 180, height: 180 }}
-          viewBox="0 0 180 180"
+          style={{ width: QR_PIXEL_SIZE, height: QR_PIXEL_SIZE }}
+          viewBox={`0 0 ${QR_PIXEL_SIZE} ${QR_PIXEL_SIZE}`}
           className={
             style.shape === "rounded"
               ? "rounded-2xl"
@@ -1002,7 +1003,6 @@ export default function Home() {
               : ""
           }
         />
-
         {(logoImage || logoPreset) && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">

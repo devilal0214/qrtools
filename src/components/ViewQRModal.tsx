@@ -39,8 +39,15 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
     return [qrCode.content || ""];
   }, [qrCode.type, qrCode.content]);
 
-  // This is the **only** value we show + copy + encode in QR
-  const currentValue = urls[currentUrlIndex] || "";
+  // 👉 Destination URL (for your own reference / future use if needed)
+  const destinationUrl = urls[currentUrlIndex] || "";
+
+  // 👉 Tracking short URL (this is what we want in the QR for analytics)
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const shortUrl = origin ? `${origin}/qr/${qrCode.id}` : `/qr/${qrCode.id}`;
+
+  // This is the value we encode in the QR + copy + open
+  const currentValue = shortUrl;
 
   const copyToClipboard = async () => {
     if (!currentValue) return;
@@ -85,8 +92,8 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
         const url = URL.createObjectURL(svgBlob);
 
         await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
+          img.onload = resolve as any;
+          img.onerror = reject as any;
           img.src = url;
         });
 
@@ -141,7 +148,7 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
             <div className="grid md:grid-cols-2 gap-8">
               {/* Left: Controls */}
               <div className="space-y-6">
-                {/* “Short URL” = actual stored value */}
+                {/* Short URL (tracking URL) */}
                 <div className="bg-gray-50 p-4 rounded-lg space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
                     Short URL
@@ -189,6 +196,18 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
                       )}
                     </button>
                   </div>
+
+                  {/* (Optional) show destination for reference if MULTI_URL */}
+                  {qrCode.type === "MULTI_URL" && destinationUrl && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-500 mb-1">
+                        Selected destination URL (for this QR logic):
+                      </p>
+                      <p className="text-xs text-gray-600 break-all">
+                        {destinationUrl}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Size */}
@@ -249,11 +268,11 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
                   </select>
                 </div>
 
-                {/* URL selector for MULTI_URL */}
+                {/* URL selector for MULTI_URL (still useful to see destination) */}
                 {qrCode.type === "MULTI_URL" && urls.length > 1 && (
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      Select URL
+                      Select destination (for reference)
                     </label>
                     <select
                       value={currentUrlIndex}
@@ -287,7 +306,7 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
                   </button>
                 </div>
 
-                {/* Open in new page – uses same value */}
+                {/* Open in new page – uses tracking URL so analytics work */}
                 {currentValue && (
                   <Link
                     href={currentValue}
@@ -310,9 +329,7 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
                     size={size}
                     fgColor={fgColor}
                     bgColor={bgColor}
-                    // Use low error correction level and explicit sizing/viewBox
-                    // so the QR density matches the index page which uses a short URL
-                    // and level L (7% error correction)
+                    // low error correction = less dense
                     level="L"
                     style={{ width: size, height: size }}
                     viewBox={`0 0 ${size} ${size}`}

@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  increment,
+  collection,
+  addDoc,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import QRCode from "react-qr-code";
 import Head from "next/head";
@@ -9,6 +16,7 @@ interface QRData {
   title?: string;
   type: string;
   content: string;
+  userId?: string; // 👈 owner userId
   settings?: {
     size?: number;
     fgColor?: string;
@@ -44,66 +52,43 @@ export default function QRCodeViewer() {
             setContents([data.content]);
           }
 
-          // Track view via server-side API to record details and increment
-          // the scan count on the qrcodes document. We rely on the admin
-          // endpoint rather than client-side updates to prevent double
-          // counting and to ensure the scan is logged with IP/device data.
+          // ---------- TRACK SCAN DIRECTLY IN FIRESTORE ----------
           try {
-            const payload = JSON.stringify({ qrId: id });
-            if (
-              typeof window !== "undefined" &&
-              (navigator as any).sendBeacon
-            ) {
-              const blob = new Blob([payload], { type: "application/json" });
-              const beaconResult = (navigator as any).sendBeacon(
-                "/api/track-view",
-                blob
-              );
-              console.log("sendBeacon result (s page):", beaconResult);
-              if (!beaconResult) {
-                const resp = await fetch("/api/track-view", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: payload,
-                });
-                const json = await resp.json().catch(() => null);
-                console.log(
-                  "track-view response (s page fallback):",
-                  resp.status,
-                  json
-                );
-                if (!resp.ok) {
-                  try {
-                    await updateDoc(docRef, { scans: increment(1) });
-                  } catch (err) {
-                    console.error("Error incrementing scans fallback:", err);
-                  }
-                }
-              }
-            } else {
-              const resp = await fetch("/api/track-view", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: payload,
-              });
-              const json = await resp.json().catch(() => null);
-              console.log("track-view response (s page):", resp.status, json);
-              if (!resp.ok) {
-                try {
-                  await updateDoc(docRef, { scans: increment(1) });
-                } catch (err) {
-                  console.error("Error incrementing scans fallback:", err);
-                }
-              }
-            }
-          } catch (err) {
-            console.error("Error tracking view:", err);
-            try {
-              await updateDoc(docRef, { scans: increment(1) });
-            } catch (e) {
-              console.error("Error incrementing scans fallback:", e);
-            }
+            const userAgent =
+              typeof navigator !== "undefined" ? navigator.userAgent : "";
+            const referrer =
+              typeof document !== "undefined" ? document.referrer : "";
+
+            await addDoc(collection(db, "scans"), {
+              qrId: id,
+              userId: data.userId || null, // 👈 owner id store
+              timestamp: new Date().toISOString(),
+              ipInfo: {
+                ip: null,
+                city: null,
+                region: null,
+                country: null,
+                latitude: null,
+                longitude: null,
+                org: null,
+              },
+              browser: {
+                name: userAgent,
+                version: null,
+              },
+              os: {},
+              device: {},
+              referrer,
+            });
+
+            await updateDoc(docRef, {
+              scans: increment(1),
+              updatedAt: new Date().toISOString(),
+            });
+          } catch (trackErr) {
+            console.error("Error tracking view / writing scan doc:", trackErr);
           }
+          // ------------------------------------------------------
         } else {
           setError("QR code not found");
         }
@@ -129,6 +114,14 @@ export default function QRCodeViewer() {
       setCurrentIndex(currentIndex - 1);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   if (error || !qrData) {
     return (

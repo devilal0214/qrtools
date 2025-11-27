@@ -1,4 +1,3 @@
-// pages/api/track-view.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import { adminDb } from "@/lib/firebase-admin";
 import { UAParser } from "ua-parser-js";

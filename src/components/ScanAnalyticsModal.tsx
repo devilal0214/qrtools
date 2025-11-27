@@ -10,6 +10,7 @@ interface QRCode {
   scans: number;
   isActive: boolean;
   title?: string;
+  userId?: string;
 }
 
 interface ScanRecord {
@@ -39,7 +40,7 @@ interface ScanRecord {
 }
 
 interface LocationStat {
-  key: string; // formatted label
+  key: string;
   city?: string | null;
   region?: string | null;
   country?: string | null;
@@ -57,7 +58,6 @@ export default function ScanAnalyticsModal({
 }: ScanAnalyticsModalProps) {
   const [loading, setLoading] = useState(true);
   const [scans, setScans] = useState<ScanRecord[]>([]);
-  const [permissionDenied, setPermissionDenied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [locationStats, setLocationStats] = useState<LocationStat[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<LocationStat | null>(
@@ -66,9 +66,17 @@ export default function ScanAnalyticsModal({
 
   useEffect(() => {
     const fetchScans = async () => {
+      // Safety: agar kisi reason se qrCode.id empty aa jaye
+      if (!qrCode?.id) {
+        setLoading(false);
+        setErrorMessage("QR ID missing – cannot load analytics.");
+        return;
+      }
+
       try {
         setLoading(true);
 
+        // Sirf is QR ke scans fetch kar rahe hain
         const q = query(
           collection(db, "scans"),
           where("qrId", "==", qrCode.id),
@@ -83,7 +91,7 @@ export default function ScanAnalyticsModal({
 
         setScans(records);
 
-        // Aggregate by location
+        // ---- Aggregate by location ----
         const locationMap = new Map<string, LocationStat>();
 
         records.forEach((rec) => {
@@ -119,18 +127,13 @@ export default function ScanAnalyticsModal({
       } catch (err: any) {
         console.error("Error fetching scan analytics:", err);
         setErrorMessage(err?.message || String(err));
-        // If the Firestore client read fails due to security rules, surface a
-        // friendly message so users know why analytics might be empty.
-        if (err?.code === "permission-denied") {
-          setPermissionDenied(true);
-        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchScans();
-  }, [qrCode.id]);
+  }, [qrCode.id, qrCode]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -162,12 +165,6 @@ export default function ScanAnalyticsModal({
             <div className="flex items-center justify-center py-10">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
-          ) : permissionDenied ? (
-            <p className="text-sm text-gray-500 text-center py-6">
-              You don't have permission to view analytics for this QR code.
-              Ensure you are the owner of the QR or your plan includes
-              analytics.
-            </p>
           ) : errorMessage ? (
             <p className="text-sm text-gray-500 text-center py-6">
               {errorMessage}
@@ -205,9 +202,9 @@ export default function ScanAnalyticsModal({
                 </div>
               </div>
 
-              {/* Locations list & detail */}
+              {/* Locations + detail list */}
               <div className="grid md:grid-cols-2 gap-6">
-                {/* Left: aggregated list */}
+                {/* Left: aggregated locations */}
                 <div>
                   <h4 className="text-sm font-semibold text-gray-800 mb-3">
                     Scans by location
@@ -248,7 +245,7 @@ export default function ScanAnalyticsModal({
                   </div>
                 </div>
 
-                {/* Right: raw scan list filtered by selected location */}
+                {/* Right: individual scans */}
                 <div>
                   <h4 className="text-sm font-semibold text-gray-800 mb-3">
                     Scans in{" "}
