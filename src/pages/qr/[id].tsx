@@ -163,11 +163,41 @@ export default function QRPage() {
       <>
         <Head>
           <style>{`
-            body { 
+            html, body { 
               background-color: #000 !important; 
               overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              height: 100vh !important;
+            }
+            *:not(.redirect-container):not(.redirect-loader):not(.spinner):not(.redirect-text) { 
+              display: none !important;
+              visibility: hidden !important;
+            }
+            #__next {
+              background-color: #000 !important;
+              height: 100vh !important;
+              width: 100vw !important;
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              z-index: 999999 !important;
+            }
+            .redirect-container {
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              width: 100vw !important;
+              height: 100vh !important;
+              background-color: #000 !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              z-index: 999999 !important;
             }
             .redirect-loader {
+              display: flex !important;
+              align-items: center !important;
               visibility: visible !important;
             }
             .spinner {
@@ -178,6 +208,7 @@ export default function QRPage() {
               height: 24px;
               animation: spin 1s linear infinite;
               margin-right: 12px;
+              display: block !important;
             }
             @keyframes spin {
               0% { transform: rotate(0deg); }
@@ -188,11 +219,12 @@ export default function QRPage() {
               font-size: 16px;
               font-weight: 500;
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: block !important;
             }
           `}</style>
         </Head>
-        <div className="min-h-screen flex items-center justify-center redirect-loader" style={{ backgroundColor: '#000' }}>
-          <div className="flex items-center">
+        <div className="redirect-container">
+          <div className="redirect-loader">
             <div className="spinner"></div>
             <span className="redirect-text">Redirecting...</span>
           </div>
