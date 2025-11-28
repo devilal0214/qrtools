@@ -182,7 +182,7 @@ const ContentTypeIcons = {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth={2}
-        d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+        d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 111.314 0z"
       />
       <path
         strokeLinecap="round"
@@ -632,10 +632,16 @@ export default function Home() {
     });
   };
 
-  // Logo upload handler
+  // Logo upload handler – SVG + PNG only
   const handleLogoUpload = (e: any) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const allowedTypes = ["image/png", "image/svg+xml"];
+    if (!allowedTypes.includes(file.type)) {
+      setError("Please upload logo in SVG or PNG format only.");
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -983,7 +989,7 @@ export default function Home() {
       return text || "";
     })();
 
-    const QR_PIXEL_SIZE = 256; 
+    const QR_PIXEL_SIZE = 256;
     const QRCore = (
       <div className="relative inline-block">
         <QRCode
@@ -1408,15 +1414,16 @@ export default function Home() {
                     ))}
                   </div>
 
+                  {/* Upload (SVG + PNG only) */}
                   <div className="mt-3 border border-dashed border-gray-300 rounded-2xl p-4 text-center">
                     <p className="text-xs text-gray-600 mb-2">
-                      Drag and drop or click to upload a logo (PNG/JPG)
+                      Drag and drop or click to upload a logo (SVG or PNG only)
                     </p>
                     <label className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-gray-900 text-white text-xs font-medium cursor-pointer">
                       Upload logo
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/png,image/svg+xml"
                         className="hidden"
                         onChange={handleLogoUpload}
                       />
@@ -1441,7 +1448,7 @@ export default function Home() {
                 {/* Grey preview area */}
                 <div className="flex items-center justify-center py-10 px-4 min-h-[400px]">
                   {isLoading ? (
-                    <div className="animate-pulse flex flex-col items-center">
+                    <div className="animate-pulse flex flex-col itemscenter">
                       <div className="w-32 h-32 bg-gray-200" />
                       <p className="mt-4 text-sm text-gray-400">
                         Generating QR code...
