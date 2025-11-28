@@ -165,17 +165,36 @@ export default function QRPage() {
           <style>{`
             body { 
               background-color: #000 !important; 
-              color: transparent !important; 
               overflow: hidden !important;
             }
-            * { 
-              visibility: hidden !important; 
+            .redirect-loader {
+              visibility: visible !important;
+            }
+            .spinner {
+              border: 2px solid rgba(255, 255, 255, 0.3);
+              border-top: 2px solid #ffffff;
+              border-radius: 50%;
+              width: 24px;
+              height: 24px;
+              animation: spin 1s linear infinite;
+              margin-right: 12px;
+            }
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+            .redirect-text {
+              color: #ffffff;
+              font-size: 16px;
+              font-weight: 500;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             }
           `}</style>
         </Head>
-        <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#000', color: 'transparent' }}>
-          <div style={{ opacity: 0 }}>
-            <p className="text-gray-500 text-sm">.</p>
+        <div className="min-h-screen flex items-center justify-center redirect-loader" style={{ backgroundColor: '#000' }}>
+          <div className="flex items-center">
+            <div className="spinner"></div>
+            <span className="redirect-text">Redirecting...</span>
           </div>
         </div>
       </>
