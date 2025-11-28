@@ -3,18 +3,15 @@ import { adminDb } from "@/lib/firebase-admin";
 import { UAParser } from "ua-parser-js";
 import { FieldValue } from "firebase-admin/firestore";
 
-
- // Strip IPv6-prefixed IPv4 like ::ffff:1.2.3.4
-
+// Strip IPv6-prefixed IPv4 like ::ffff:1.2.3.4 & take first from comma list
 function normalizeIp(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  let ip = raw.split(",")[0].trim(); // first from x-forwarded-for
+  let ip = raw.split(",")[0].trim();
   if (ip.startsWith("::ffff:")) ip = ip.slice(7);
-  return ip;
+  return ip || null;
 }
 
- // Detect private / local IP ranges – we don't call geo API for these
-
+// Detect private / local IP ranges – we don't call geo API for these
 function isPrivateIp(ip: string | null): boolean {
   if (!ip) return true;
 
@@ -32,39 +29,60 @@ function isPrivateIp(ip: string | null): boolean {
   return false;
 }
 
-
- //Get best-guess client IP behind proxies
- 
+// Get best-guess client IP behind proxies / CDNs
 function getClientIp(req: NextApiRequest): string | null {
-  const xff = req.headers["x-forwarded-for"] as string | undefined;
-  if (xff) {
+  // Cloudflare / some CDNs
+  const cf = normalizeIp(req.headers["cf-connecting-ip"] as string | undefined);
+  const xClient = normalizeIp(req.headers["x-client-ip"] as string | undefined);
+
+  // Standard proxy headers
+  const xffHeader = req.headers["x-forwarded-for"];
+  const xReal = normalizeIp(req.headers["x-real-ip"] as string | undefined);
+  const remote = normalizeIp(req.socket.remoteAddress || null);
+
+  console.log("[track-view] IP headers:", {
+    cf,
+    xClient,
+    xForwardedFor: xffHeader,
+    xReal,
+    remote,
+  });
+
+  // Prefer Cloudflare header if it exists and is public
+  if (cf && !isPrivateIp(cf)) return cf;
+
+  // Then x-client-ip if public
+  if (xClient && !isPrivateIp(xClient)) return xClient;
+
+  // Then x-forwarded-for – can be "realIp, proxy1, proxy2"
+  if (xffHeader) {
+    const xff = Array.isArray(xffHeader) ? xffHeader[0] : xffHeader;
     const parts = xff
       .split(",")
       .map((p) => normalizeIp(p))
       .filter(Boolean) as string[];
 
-    // Pick first non-private IP if possible
     const publicIp = parts.find((ip) => !isPrivateIp(ip));
     if (publicIp) return publicIp;
-    if (parts.length) return parts[0];
+    if (parts.length) return parts[0]; // fall back to first
   }
 
-  const xReal = normalizeIp(req.headers["x-real-ip"] as string | undefined);
+  // Then x-real-ip
   if (xReal) return xReal;
 
-  const sock = normalizeIp(req.socket.remoteAddress || null);
-  return sock;
+  // Finally the socket remote address
+  return remote;
 }
 
-/**
- * Geo lookup via ipapi.co
- */
+ // Geo lookup via ipapi.co
+ 
 async function getGeoFromIP(ip: string | null) {
   const cleanIp = normalizeIp(ip);
   if (!cleanIp) return null;
 
   // Don't waste geo lookup on local/private IPs – will always be "Unknown"
   if (isPrivateIp(cleanIp)) {
+    console.log("[track-view] private/local IP, skipping geo lookup:", cleanIp);
     return {
       ip: cleanIp,
       city: null,
@@ -145,8 +163,9 @@ export default async function handler(
       return res.status(500).json({ error: "adminDb not configured" });
     }
 
-    // 1. Get client IP (handles x-forwarded-for / x-real-ip / remoteAddress)
+    // 1. Get client IP (handles cf-connecting-ip / x-client-ip / x-forwarded-for / x-real-ip / remoteAddress)
     const clientIp = getClientIp(req);
+    console.log("[track-view] resolved client IP:", clientIp);
 
     // 2. Browser / device info from User-Agent
     const uaString = (req.headers["user-agent"] as string) || "";
