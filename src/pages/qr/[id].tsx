@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import QRCode from "react-qr-code";
 import Head from "next/head";
@@ -32,10 +32,12 @@ export default function QRPage() {
 
     const handleQR = async () => {
       try {
-        // Immediately hide the loading screen
-        document.body.style.backgroundColor = '#000';
-        document.body.style.color = 'transparent';
-        
+        // Make page black immediately on client
+        if (typeof document !== "undefined") {
+          document.body.style.backgroundColor = "#000";
+          document.body.style.color = "transparent";
+        }
+
         const ref = doc(db, "qrcodes", id as string);
         const snap = await getDoc(ref);
 
@@ -55,33 +57,44 @@ export default function QRPage() {
 
         const type = (data.type || "").toUpperCase();
         const content = data.content || "";
-        
-        // Function to handle redirect with tracking
+
+        // ---------- shared redirect helper ----------
         const redirectTo = (url: string) => {
-          // Track detailed view (IP, browser, etc) via API using sendBeacon for instant redirect
           const trackPayload = JSON.stringify({ qrId: id });
-          
-          // Fire tracking request without waiting for response
-          if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
-            const blob = new Blob([trackPayload], { type: "application/json" });
-            (navigator as any).sendBeacon("/api/track-view", blob);
-          } else {
-            fetch("/api/track-view", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: trackPayload,
-              keepalive: true,
-            }).catch(() => {});
+
+          // Fire tracking request without blocking redirect
+          try {
+            if (
+              typeof window !== "undefined" &&
+              (navigator as any).sendBeacon
+            ) {
+              const blob = new Blob([trackPayload], {
+                type: "application/json",
+              });
+              (navigator as any).sendBeacon("/api/track-view", blob);
+            } else {
+              fetch("/api/track-view", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: trackPayload,
+                keepalive: true,
+              }).catch(() => {});
+            }
+          } catch (e) {
+            // tracking failure is non-fatal for redirect
+            console.error("Error firing track-view:", e);
           }
-          
-          // Immediate redirect using multiple methods for maximum compatibility
-          setTimeout(() => {
-            window.location.replace(url);
-          }, 0);
-          window.location.href = url;
+
+          // Immediate redirect (replace + href as extra safety)
+          if (typeof window !== "undefined") {
+            setTimeout(() => {
+              window.location.replace(url);
+            }, 0);
+            window.location.href = url;
+          }
         };
 
-        // ========== SOCIALS ==========
+        // ---------- SOCIALS ----------
         if (type === "SOCIALS") {
           try {
             const socials = JSON.parse(content || "{}");
@@ -104,9 +117,8 @@ export default function QRPage() {
           }
         }
 
-        // ========== MULTI_URL ==========
+        // ---------- MULTI_URL ----------
         if (type === "MULTI_URL") {
-          // Your generator is using "\n" between URLs
           const urlList = content
             .split("\n")
             .map((u) => u.trim())
@@ -118,20 +130,20 @@ export default function QRPage() {
             return;
           }
 
-          // If only one URL → direct redirect
+          // Single URL → redirect directly
           if (urlList.length === 1 && typeof window !== "undefined") {
             redirectTo(urlList[0]);
             return;
           }
 
-          // Multiple URLs → show Multi URL viewer with QR codes
+          // Multiple URLs → show viewer
           setQrCode(data);
           setUrls(urlList);
           setStatus("done");
           return;
         }
 
-        // ========== SIMPLE URL ==========
+        // ---------- SIMPLE URL ----------
         if (type === "URL") {
           if (content && typeof window !== "undefined") {
             redirectTo(content);
@@ -142,7 +154,7 @@ export default function QRPage() {
           return;
         }
 
-        // ========== OTHER TYPES (PLAIN_TEXT, SMS, etc.) ==========
+        // ---------- OTHER TYPES (PLAIN_TEXT, SMS, etc.) ----------
         setQrCode(data);
         setMessage(content);
         setStatus("done");
@@ -161,78 +173,76 @@ export default function QRPage() {
   if (status === "loading") {
     return (
       <>
-        <>
-          <Head>
-            <style>{`
-              html { 
-                background-color: #000 !important; 
-              }
-              body { 
-                background-color: #000 !important; 
-                overflow: hidden !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                height: 100vh !important;
-              }
-              body * { 
-                display: none !important;
-                visibility: hidden !important;
-              }
-              .qr-redirect-overlay {
-                display: block !important;
-                visibility: visible !important;
-                position: fixed !important;
-                top: 0 !important;
-                left: 0 !important;
-                width: 100vw !important;
-                height: 100vh !important;
-                background-color: #000 !important;
-                z-index: 999999 !important;
-              }
-              .qr-redirect-overlay * {
-                display: flex !important;
-                visibility: visible !important;
-              }
-              .qr-redirect-loader {
-                position: absolute !important;
-                top: 50% !important;
-                left: 50% !important;
-                transform: translate(-50%, -50%) !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                flex-direction: row !important;
-              }
-              .qr-spinner {
-                border: 2px solid rgba(255, 255, 255, 0.3) !important;
-                border-top: 2px solid #ffffff !important;
-                border-radius: 50% !important;
-                width: 24px !important;
-                height: 24px !important;
-                animation: qr-spin 1s linear infinite !important;
-                margin-right: 12px !important;
-              }
-              @keyframes qr-spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-              }
-              .qr-redirect-text {
-                color: #ffffff !important;
-                font-size: 16px !important;
-                font-weight: 500 !important;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-                margin: 0 !important;
-                padding: 0 !important;
-              }
-            `}</style>
-          </Head>
-          <div className="qr-redirect-overlay">
-            <div className="qr-redirect-loader">
-              <div className="qr-spinner"></div>
-              <span className="qr-redirect-text">Redirecting...</span>
-            </div>
+        <Head>
+          <style>{`
+            html { 
+              background-color: #000 !important; 
+            }
+            body { 
+              background-color: #000 !important; 
+              overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              height: 100vh !important;
+            }
+            body * { 
+              display: none !important;
+              visibility: hidden !important;
+            }
+            .qr-redirect-overlay {
+              display: block !important;
+              visibility: visible !important;
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              width: 100vw !important;
+              height: 100vh !important;
+              background-color: #000 !important;
+              z-index: 999999 !important;
+            }
+            .qr-redirect-overlay * {
+              display: flex !important;
+              visibility: visible !important;
+            }
+            .qr-redirect-loader {
+              position: absolute !important;
+              top: 50% !important;
+              left: 50% !important;
+              transform: translate(-50%, -50%) !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              flex-direction: row !important;
+            }
+            .qr-spinner {
+              border: 2px solid rgba(255, 255, 255, 0.3) !important;
+              border-top: 2px solid #ffffff !important;
+              border-radius: 50% !important;
+              width: 24px !important;
+              height: 24px !important;
+              animation: qr-spin 1s linear infinite !important;
+              margin-right: 12px !important;
+            }
+            @keyframes qr-spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+            .qr-redirect-text {
+              color: #ffffff !important;
+              font-size: 16px !important;
+              font-weight: 500 !important;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+          `}</style>
+        </Head>
+        <div className="qr-redirect-overlay">
+          <div className="qr-redirect-loader">
+            <div className="qr-spinner"></div>
+            <span className="qr-redirect-text">Redirecting...</span>
           </div>
-        </>
+        </div>
       </>
     );
   }
