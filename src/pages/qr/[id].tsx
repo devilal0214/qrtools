@@ -58,20 +58,58 @@ export default function QRPage() {
         
         // Function to handle redirect with tracking
         const redirectTo = (url: string) => {
-          // Track detailed view (IP, browser, etc) via API using sendBeacon for instant redirect
-          const trackPayload = JSON.stringify({ qrId: id });
-          
-          // Fire tracking request without waiting for response
-          if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
-            const blob = new Blob([trackPayload], { type: "application/json" });
-            (navigator as any).sendBeacon("/api/track-view", blob);
+          // Try to get browser geolocation as fallback for mobile
+          const sendTrackingData = (browserGeo?: any) => {
+            const trackPayload = JSON.stringify({ 
+              qrId: id,
+              browserGeo: browserGeo || null
+            });
+            
+            // Fire tracking request without waiting for response
+            if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
+              const blob = new Blob([trackPayload], { type: "application/json" });
+              (navigator as any).sendBeacon("/api/track-view", blob);
+            } else {
+              fetch("/api/track-view", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: trackPayload,
+                keepalive: true,
+              }).catch(() => {});
+            }
+          };
+
+          // Try to get location for better mobile tracking
+          if (navigator.geolocation && /Mobile|Android|iPhone|iPad/.test(navigator.userAgent)) {
+            navigator.geolocation.getCurrentPosition(
+              async (position) => {
+                try {
+                  // Get location info from coordinates
+                  const geoRes = await fetch("/api/browser-geo", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      latitude: position.coords.latitude,
+                      longitude: position.coords.longitude
+                    })
+                  });
+                  
+                  const geoData = await geoRes.json();
+                  sendTrackingData(geoData);
+                } catch (err) {
+                  console.log("Browser geo failed:", err);
+                  sendTrackingData();
+                }
+              },
+              () => {
+                // Geolocation failed or denied, send without location
+                sendTrackingData();
+              },
+              { timeout: 3000, enableHighAccuracy: false }
+            );
           } else {
-            fetch("/api/track-view", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: trackPayload,
-              keepalive: true,
-            }).catch(() => {});
+            // Not mobile or geolocation not available
+            sendTrackingData();
           }
           
           // Immediate redirect using multiple methods for maximum compatibility

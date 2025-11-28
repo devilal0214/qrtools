@@ -3,34 +3,80 @@ import { adminDb } from "@/lib/firebase-admin";
 import { UAParser } from "ua-parser-js";
 import { FieldValue } from "firebase-admin/firestore";
 
-// Helper: get geo/location info from IP
+// Helper: get geo/location info from IP with multiple fallback services
 async function getGeoFromIP(ip: string | null) {
-  if (!ip) return null;
+  if (!ip) {
+    console.log("[getGeoFromIP] No IP provided");
+    return null;
+  }
 
   const cleanIp = ip.split(",")[0].trim();
+  console.log("[getGeoFromIP] Attempting geolocation for IP:", cleanIp);
 
-  try {
-    const res = await fetch(`https://ipapi.co/${cleanIp}/json/`);
-
-    if (!res.ok) {
-      return { ip: cleanIp };
-    }
-
-    const data = await res.json();
-
-    return {
-      ip: cleanIp,
-      city: data.city || null,
-      region: data.region || null,
-      country: data.country_name || null,
-      latitude: data.latitude || null,
-      longitude: data.longitude || null,
-      org: data.org || null,
-    };
-  } catch (err) {
-    console.error("Geo lookup failed:", err);
-    return { ip: cleanIp };
+  // Skip localhost/private IPs
+  if (cleanIp === '127.0.0.1' || cleanIp === '::1' || cleanIp.startsWith('192.168.') || cleanIp.startsWith('10.') || cleanIp.startsWith('172.')) {
+    console.log("[getGeoFromIP] Private/localhost IP detected:", cleanIp);
+    return { ip: cleanIp, city: "Local", country: "Local Network" };
   }
+
+  // Try multiple geolocation services
+  const services = [
+    {
+      name: "ipapi.co",
+      url: `https://ipapi.co/${cleanIp}/json/`,
+      parser: (data: any) => ({
+        ip: cleanIp,
+        city: data.city || null,
+        region: data.region || null,
+        country: data.country_name || null,
+        latitude: data.latitude || null,
+        longitude: data.longitude || null,
+        org: data.org || null,
+      })
+    },
+    {
+      name: "ip-api.com",
+      url: `http://ip-api.com/json/${cleanIp}`,
+      parser: (data: any) => ({
+        ip: cleanIp,
+        city: data.city || null,
+        region: data.regionName || null,
+        country: data.country || null,
+        latitude: data.lat || null,
+        longitude: data.lon || null,
+        org: data.org || data.isp || null,
+      })
+    }
+  ];
+
+  for (const service of services) {
+    try {
+      console.log(`[getGeoFromIP] Trying ${service.name} for IP: ${cleanIp}`);
+      const res = await fetch(service.url, { timeout: 5000 } as any);
+
+      if (!res.ok) {
+        console.log(`[getGeoFromIP] ${service.name} returned status: ${res.status}`);
+        continue;
+      }
+
+      const data = await res.json();
+      console.log(`[getGeoFromIP] ${service.name} response:`, data);
+      
+      const result = service.parser(data);
+      
+      // Validate we got useful data
+      if (result.city || result.country) {
+        console.log(`[getGeoFromIP] Success with ${service.name}:`, result);
+        return result;
+      }
+    } catch (err) {
+      console.error(`[getGeoFromIP] ${service.name} failed:`, err);
+      continue;
+    }
+  }
+
+  console.log("[getGeoFromIP] All services failed, returning IP only");
+  return { ip: cleanIp };
 }
 
 export default async function handler(
@@ -41,7 +87,7 @@ export default async function handler(
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { qrId } = req.body;
+  const { qrId, browserGeo } = req.body;
 
   if (!qrId || typeof qrId !== "string") {
     return res.status(400).json({ error: "qrId is required" });
@@ -55,12 +101,27 @@ export default async function handler(
       return res.status(500).json({ error: "adminDb not configured" });
     }
 
-    // 1. Get client IP
+    // 1. Get client IP - check multiple headers for mobile/proxy compatibility
     const ipHeader =
       (req.headers["x-forwarded-for"] as string | undefined) ||
       (req.headers["x-real-ip"] as string | undefined) ||
+      (req.headers["cf-connecting-ip"] as string | undefined) || // Cloudflare
+      (req.headers["x-client-ip"] as string | undefined) || // Mobile carriers
+      (req.headers["x-forwarded"] as string | undefined) ||
+      (req.headers["forwarded-for"] as string | undefined) ||
+      (req.headers["forwarded"] as string | undefined) ||
+      (req.connection?.remoteAddress as string | null) ||
       (req.socket.remoteAddress as string | null) ||
       null;
+    
+    console.log("[track-view] IP detection headers:", {
+      "x-forwarded-for": req.headers["x-forwarded-for"],
+      "x-real-ip": req.headers["x-real-ip"],
+      "cf-connecting-ip": req.headers["cf-connecting-ip"],
+      "x-client-ip": req.headers["x-client-ip"],
+      "socket-remote": req.socket.remoteAddress,
+      "final-ip": ipHeader
+    });
 
     // 2. Browser / device info from User-Agent
     const uaString = (req.headers["user-agent"] as string) || "";
@@ -83,11 +144,25 @@ export default async function handler(
       model: uaResult.device.model || null,
     };
 
-    // 3. Approx location from IP
-    const geo = await getGeoFromIP(ipHeader);
+    // 3. Approx location from IP (with browser geolocation fallback)
+    let geo = await getGeoFromIP(ipHeader);
+    
+    // If IP geolocation failed and we have browser coordinates, use those
+    if ((!geo || !geo.city) && browserGeo && browserGeo.latitude && browserGeo.longitude) {
+      console.log("[track-view] IP geolocation failed, using browser geolocation");
+      geo = {
+        ip: ipHeader?.split(",")[0].trim() || null,
+        city: browserGeo.city || null,
+        region: browserGeo.region || null,
+        country: browserGeo.country || null,
+        latitude: browserGeo.latitude,
+        longitude: browserGeo.longitude,
+        source: "browser-geolocation"
+      };
+    }
 
     // 4. Add scan record in "scans" collection
-    const scanDoc = await adminDb.collection("scans").add({
+    const scanData = {
       qrId,
       timestamp: new Date().toISOString(),
       userAgent: uaString,
@@ -96,7 +171,17 @@ export default async function handler(
       device: deviceInfo,
       ipInfo: geo,
       referrer: (req.headers.referer as string) || null,
+    };
+    
+    console.log("[track-view] Saving scan data:", {
+      qrId,
+      device: deviceInfo,
+      browser: browserInfo,
+      ipInfo: geo,
+      hasLocation: !!(geo?.city || geo?.country)
     });
+    
+    const scanDoc = await adminDb.collection("scans").add(scanData);
 
     console.log("[track-view] scan doc added:", scanDoc.id);
 
