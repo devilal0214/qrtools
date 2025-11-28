@@ -161,74 +161,78 @@ export default function QRPage() {
   if (status === "loading") {
     return (
       <>
-        <Head>
-          <style>{`
-            html, body { 
-              background-color: #000 !important; 
-              overflow: hidden !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              height: 100vh !important;
-            }
-            *:not(.redirect-container):not(.redirect-loader):not(.spinner):not(.redirect-text) { 
-              display: none !important;
-              visibility: hidden !important;
-            }
-            #__next {
-              background-color: #000 !important;
-              height: 100vh !important;
-              width: 100vw !important;
-              position: fixed !important;
-              top: 0 !important;
-              left: 0 !important;
-              z-index: 999999 !important;
-            }
-            .redirect-container {
-              position: fixed !important;
-              top: 0 !important;
-              left: 0 !important;
-              width: 100vw !important;
-              height: 100vh !important;
-              background-color: #000 !important;
-              display: flex !important;
-              align-items: center !important;
-              justify-content: center !important;
-              z-index: 999999 !important;
-            }
-            .redirect-loader {
-              display: flex !important;
-              align-items: center !important;
-              visibility: visible !important;
-            }
-            .spinner {
-              border: 2px solid rgba(255, 255, 255, 0.3);
-              border-top: 2px solid #ffffff;
-              border-radius: 50%;
-              width: 24px;
-              height: 24px;
-              animation: spin 1s linear infinite;
-              margin-right: 12px;
-              display: block !important;
-            }
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-            .redirect-text {
-              color: #ffffff;
-              font-size: 16px;
-              font-weight: 500;
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              display: block !important;
-            }
-          `}</style>
-        </Head>
-        <div className="redirect-container">
-          <div className="redirect-loader">
-            <div className="spinner"></div>
-            <span className="redirect-text">Redirecting...</span>
+        <>
+          <Head>
+            <style>{`
+              html { 
+                background-color: #000 !important; 
+              }
+              body { 
+                background-color: #000 !important; 
+                overflow: hidden !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                height: 100vh !important;
+              }
+              body * { 
+                display: none !important;
+                visibility: hidden !important;
+              }
+              .qr-redirect-overlay {
+                display: block !important;
+                visibility: visible !important;
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                background-color: #000 !important;
+                z-index: 999999 !important;
+              }
+              .qr-redirect-overlay * {
+                display: flex !important;
+                visibility: visible !important;
+              }
+              .qr-redirect-loader {
+                position: absolute !important;
+                top: 50% !important;
+                left: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                flex-direction: row !important;
+              }
+              .qr-spinner {
+                border: 2px solid rgba(255, 255, 255, 0.3) !important;
+                border-top: 2px solid #ffffff !important;
+                border-radius: 50% !important;
+                width: 24px !important;
+                height: 24px !important;
+                animation: qr-spin 1s linear infinite !important;
+                margin-right: 12px !important;
+              }
+              @keyframes qr-spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+              .qr-redirect-text {
+                color: #ffffff !important;
+                font-size: 16px !important;
+                font-weight: 500 !important;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+            `}</style>
+          </Head>
+          <div className="qr-redirect-overlay">
+            <div className="qr-redirect-loader">
+              <div className="qr-spinner"></div>
+              <span className="qr-redirect-text">Redirecting...</span>
+            </div>
           </div>
-        </div>
+        </>
       </>
     );
   }
