@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import QRCode from "react-qr-code";
+import Head from "next/head";
 
 interface QRDoc {
   type: string;
@@ -31,6 +32,10 @@ export default function QRPage() {
 
     const handleQR = async () => {
       try {
+        // Immediately hide the loading screen
+        document.body.style.backgroundColor = '#000';
+        document.body.style.color = 'transparent';
+        
         const ref = doc(db, "qrcodes", id as string);
         const snap = await getDoc(ref);
 
@@ -48,27 +53,33 @@ export default function QRPage() {
           return;
         }
 
-        //  Track detailed view (IP, browser, etc) via API using sendBeacon for instant redirect
-        //  sendBeacon is fire-and-forget and doesn't block navigation
-        const trackPayload = JSON.stringify({ qrId: id });
-        
-        // Fire tracking request without waiting for response
-        if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
-          // Use sendBeacon for instant redirect (fire and forget)
-          const blob = new Blob([trackPayload], { type: "application/json" });
-          (navigator as any).sendBeacon("/api/track-view", blob);
-        } else {
-          // Fallback: use fetch but don't wait for it
-          fetch("/api/track-view", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: trackPayload,
-            keepalive: true, // Ensures request completes even after navigation
-          }).catch((e) => console.error("Error tracking view:", e));
-        }
-
         const type = (data.type || "").toUpperCase();
         const content = data.content || "";
+        
+        // Function to handle redirect with tracking
+        const redirectTo = (url: string) => {
+          // Track detailed view (IP, browser, etc) via API using sendBeacon for instant redirect
+          const trackPayload = JSON.stringify({ qrId: id });
+          
+          // Fire tracking request without waiting for response
+          if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
+            const blob = new Blob([trackPayload], { type: "application/json" });
+            (navigator as any).sendBeacon("/api/track-view", blob);
+          } else {
+            fetch("/api/track-view", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: trackPayload,
+              keepalive: true,
+            }).catch(() => {});
+          }
+          
+          // Immediate redirect using multiple methods for maximum compatibility
+          setTimeout(() => {
+            window.location.replace(url);
+          }, 0);
+          window.location.href = url;
+        };
 
         // ========== SOCIALS ==========
         if (type === "SOCIALS") {
@@ -78,8 +89,7 @@ export default function QRPage() {
             const url = platform ? socials[platform] : "";
 
             if (url && typeof window !== "undefined") {
-              // Immediate redirect without showing intermediate page
-              window.location.replace(url);
+              redirectTo(url);
               return;
             } else {
               setStatus("error");
@@ -110,8 +120,7 @@ export default function QRPage() {
 
           // If only one URL → direct redirect
           if (urlList.length === 1 && typeof window !== "undefined") {
-            // Immediate redirect without showing intermediate page
-            window.location.replace(urlList[0]);
+            redirectTo(urlList[0]);
             return;
           }
 
@@ -125,8 +134,7 @@ export default function QRPage() {
         // ========== SIMPLE URL ==========
         if (type === "URL") {
           if (content && typeof window !== "undefined") {
-            // Immediate redirect without showing intermediate page
-            window.location.replace(content);
+            redirectTo(content);
             return;
           }
           setStatus("error");
@@ -152,9 +160,25 @@ export default function QRPage() {
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-500 text-sm">Opening your link...</p>
-      </div>
+      <>
+        <Head>
+          <style>{`
+            body { 
+              background-color: #000 !important; 
+              color: transparent !important; 
+              overflow: hidden !important;
+            }
+            * { 
+              visibility: hidden !important; 
+            }
+          `}</style>
+        </Head>
+        <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#000', color: 'transparent' }}>
+          <div style={{ opacity: 0 }}>
+            <p className="text-gray-500 text-sm">.</p>
+          </div>
+        </div>
+      </>
     );
   }
 
