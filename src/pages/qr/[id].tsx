@@ -48,66 +48,23 @@ export default function QRPage() {
           return;
         }
 
-        //  Increment scan count on server via API (admin SDK) to keep
-        //  detailed analytics in sync (do not increment client-side to
-        //  avoid double counting or permission issues)
-
-        //  Track detailed view (IP, browser, etc) via API. We use navigator.sendBeacon
-        //  when possible to ensure the tracking request completes even if we
-        //  immediately redirect the user (sendBeacon is more reliable for this).
+        //  Track detailed view (IP, browser, etc) via API using sendBeacon for instant redirect
+        //  sendBeacon is fire-and-forget and doesn't block navigation
         const trackPayload = JSON.stringify({ qrId: id });
-        try {
-          if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
-            const blob = new Blob([trackPayload], { type: "application/json" });
-            const beaconResult = (navigator as any).sendBeacon(
-              "/api/track-view",
-              blob
-            );
-            console.log("sendBeacon result:", beaconResult);
-            if (!beaconResult) {
-              // If sendBeacon failed, fall back to fetch
-              const resp = await fetch("/api/track-view", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: trackPayload,
-              });
-              const json = await resp.json().catch(() => null);
-              console.log(
-                "track-view response (fetch fallback):",
-                resp.status,
-                json
-              );
-              if (!resp.ok) {
-                try {
-                  await updateDoc(ref, { scans: increment(1) });
-                } catch (e) {
-                  console.error("Error incrementing scans fallback:", e);
-                }
-              }
-            }
-          } else {
-            const resp = await fetch("/api/track-view", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: trackPayload,
-            });
-            const json = await resp.json().catch(() => null);
-            console.log("track-view response:", resp.status, json);
-            if (!resp.ok) {
-              try {
-                await updateDoc(ref, { scans: increment(1) });
-              } catch (err) {
-                console.error("Error incrementing scans fallback:", err);
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Error tracking view:", e);
-          try {
-            await updateDoc(ref, { scans: increment(1) });
-          } catch (err) {
-            console.error("Error incrementing scans fallback:", err);
-          }
+        
+        // Fire tracking request without waiting for response
+        if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
+          // Use sendBeacon for instant redirect (fire and forget)
+          const blob = new Blob([trackPayload], { type: "application/json" });
+          (navigator as any).sendBeacon("/api/track-view", blob);
+        } else {
+          // Fallback: use fetch but don't wait for it
+          fetch("/api/track-view", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: trackPayload,
+            keepalive: true, // Ensures request completes even after navigation
+          }).catch((e) => console.error("Error tracking view:", e));
         }
 
         const type = (data.type || "").toUpperCase();
@@ -121,7 +78,8 @@ export default function QRPage() {
             const url = platform ? socials[platform] : "";
 
             if (url && typeof window !== "undefined") {
-              window.location.href = url;
+              // Immediate redirect without showing intermediate page
+              window.location.replace(url);
               return;
             } else {
               setStatus("error");
@@ -152,7 +110,8 @@ export default function QRPage() {
 
           // If only one URL → direct redirect
           if (urlList.length === 1 && typeof window !== "undefined") {
-            window.location.href = urlList[0];
+            // Immediate redirect without showing intermediate page
+            window.location.replace(urlList[0]);
             return;
           }
 
@@ -166,7 +125,8 @@ export default function QRPage() {
         // ========== SIMPLE URL ==========
         if (type === "URL") {
           if (content && typeof window !== "undefined") {
-            window.location.href = content;
+            // Immediate redirect without showing intermediate page
+            window.location.replace(content);
             return;
           }
           setStatus("error");
