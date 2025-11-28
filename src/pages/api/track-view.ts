@@ -94,40 +94,69 @@ async function getGeoFromIP(ip: string | null) {
     return { ip: cleanIp, city: "Local", country: "Local Network" };
   }
 
-  // Try multiple geolocation services
+  // Try multiple geolocation services with better reliability
   const services = [
     {
       name: "ipapi.co",
       url: `https://ipapi.co/${cleanIp}/json/`,
+      headers: { 'User-Agent': 'QRCode-Analytics/1.0' },
       parser: (data: any) => ({
         ip: cleanIp,
-        city: data.city || null,
-        region: data.region || null,
-        country: data.country_name || null,
+        city: data.city || data.district || null,
+        region: data.region || data.region_code || null,
+        country: data.country_name || data.country || null,
         latitude: data.latitude || null,
         longitude: data.longitude || null,
-        org: data.org || null,
+        org: data.org || data.isp || null,
       })
     },
     {
       name: "ip-api.com",
-      url: `http://ip-api.com/json/${cleanIp}`,
+      url: `http://ip-api.com/json/${cleanIp}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query`,
+      headers: { 'User-Agent': 'QRCode-Analytics/1.0' },
       parser: (data: any) => ({
         ip: cleanIp,
         city: data.city || null,
-        region: data.regionName || null,
+        region: data.regionName || data.region || null,
         country: data.country || null,
         latitude: data.lat || null,
         longitude: data.lon || null,
-        org: data.org || data.isp || null,
+        org: data.org || data.isp || data.as || null,
       })
+    },
+    {
+      name: "ipinfo.io",
+      url: `https://ipinfo.io/${cleanIp}/json`,
+      headers: { 'User-Agent': 'QRCode-Analytics/1.0' },
+      parser: (data: any) => {
+        const [city, region] = (data.city || '').split(',').map((s: string) => s.trim());
+        return {
+          ip: cleanIp,
+          city: city || null,
+          region: region || data.region || null,
+          country: data.country || null,
+          latitude: data.loc ? parseFloat(data.loc.split(',')[0]) : null,
+          longitude: data.loc ? parseFloat(data.loc.split(',')[1]) : null,
+          org: data.org || null,
+        };
+      }
     }
   ];
 
   for (const service of services) {
     try {
       console.log(`[getGeoFromIP] Trying ${service.name} for IP: ${cleanIp}`);
-      const res = await fetch(service.url, { timeout: 5000 } as any);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+      
+      const res = await fetch(service.url, {
+        headers: service.headers,
+        signal: controller.signal,
+        method: 'GET'
+      });
+      
+      clearTimeout(timeoutId);
 
       if (!res.ok) {
         console.log(`[getGeoFromIP] ${service.name} returned status: ${res.status}`);
@@ -135,17 +164,25 @@ async function getGeoFromIP(ip: string | null) {
       }
 
       const data = await res.json();
-      console.log(`[getGeoFromIP] ${service.name} response:`, data);
+      console.log(`[getGeoFromIP] ${service.name} response:`, JSON.stringify(data));
+      
+      // Check for API-specific error responses
+      if (data.status === 'fail' || data.error || data.message === 'invalid query') {
+        console.log(`[getGeoFromIP] ${service.name} API error:`, data.message || data.reason);
+        continue;
+      }
       
       const result = service.parser(data);
       
       // Validate we got useful data
-      if (result.city || result.country) {
-        console.log(`[getGeoFromIP] Success with ${service.name}:`, result);
+      if (result && (result.city || result.country)) {
+        console.log(`[getGeoFromIP] Success with ${service.name}:`, JSON.stringify(result));
         return result;
+      } else {
+        console.log(`[getGeoFromIP] ${service.name} returned no useful location data`);
       }
     } catch (err) {
-      console.error(`[getGeoFromIP] ${service.name} failed:`, err);
+      console.error(`[getGeoFromIP] ${service.name} failed:`, err instanceof Error ? err.message : err);
       continue;
     }
   }
