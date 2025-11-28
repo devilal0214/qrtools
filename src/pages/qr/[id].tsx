@@ -32,9 +32,8 @@ export default function QRPage() {
 
     const handleQR = async () => {
       try {
-        // Immediately hide the loading screen
-        document.body.style.backgroundColor = '#000';
-        document.body.style.color = 'transparent';
+        // Keep loading state to show spinner
+        // Don't hide immediately - let loading screen show
         
         const ref = doc(db, "qrcodes", id as string);
         const snap = await getDoc(ref);
@@ -58,6 +57,9 @@ export default function QRPage() {
         
         // Function to handle redirect with tracking
         const redirectTo = (url: string) => {
+          // Show loading state during redirect
+          setStatus("loading");
+          
           // Try to get browser geolocation as fallback for mobile
           const sendTrackingData = (browserGeo?: any) => {
             const trackPayload = JSON.stringify({ 
@@ -112,11 +114,15 @@ export default function QRPage() {
             sendTrackingData();
           }
           
-          // Immediate redirect using multiple methods for maximum compatibility
+          // Redirect after showing loading screen for a moment
           setTimeout(() => {
             window.location.replace(url);
-          }, 0);
-          window.location.href = url;
+          }, 500); // Show loading for 500ms
+          
+          // Fallback redirect in case replace fails
+          setTimeout(() => {
+            window.location.href = url;
+          }, 1000);
         };
 
         // ========== SOCIALS ==========

@@ -3,18 +3,93 @@ import { adminDb } from "@/lib/firebase-admin";
 import { UAParser } from "ua-parser-js";
 import { FieldValue } from "firebase-admin/firestore";
 
+// Strip IPv6-prefixed IPv4 like ::ffff:1.2.3.4 & take first from comma list
+function normalizeIp(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let ip = raw.split(",")[0].trim();
+  if (ip.startsWith("::ffff:")) ip = ip.slice(7);
+  return ip || null;
+}
+
+// Detect private / local IP ranges – we don't call geo API for these
+function isPrivateIp(ip: string | null): boolean {
+  if (!ip) return true;
+
+  if (ip === "127.0.0.1" || ip === "::1") return true;
+
+  if (ip.startsWith("10.")) return true;
+  if (ip.startsWith("192.168.")) return true;
+
+  // 172.16.0.0 – 172.31.255.255
+  if (ip.startsWith("172.")) {
+    const second = parseInt(ip.split(".")[1] || "0", 10);
+    if (second >= 16 && second <= 31) return true;
+  }
+
+  return false;
+}
+
+// Get best-guess client IP behind proxies / CDNs
+function getClientIp(req: NextApiRequest): string | null {
+  // Check multiple headers commonly used by proxies and CDNs
+  const headers = [
+    req.headers["cf-connecting-ip"], // Cloudflare
+    req.headers["x-client-ip"], // Mobile carriers
+    req.headers["x-forwarded-for"], // Standard proxy
+    req.headers["x-real-ip"], // Nginx
+    req.headers["x-forwarded"],
+    req.headers["forwarded-for"],
+    req.headers["forwarded"],
+    req.connection?.remoteAddress,
+    req.socket.remoteAddress
+  ];
+
+  console.log("[track-view] IP detection headers:", {
+    "cf-connecting-ip": req.headers["cf-connecting-ip"],
+    "x-client-ip": req.headers["x-client-ip"],
+    "x-forwarded-for": req.headers["x-forwarded-for"],
+    "x-real-ip": req.headers["x-real-ip"],
+    "socket-remote": req.socket.remoteAddress
+  });
+
+  // Try each header in order of preference
+  for (const header of headers) {
+    if (header) {
+      const ip = normalizeIp(header as string);
+      if (ip && !isPrivateIp(ip)) {
+        console.log("[track-view] Using public IP from header:", ip);
+        return ip;
+      }
+    }
+  }
+
+  // If no public IP found, use the first available IP (even if private)
+  for (const header of headers) {
+    if (header) {
+      const ip = normalizeIp(header as string);
+      if (ip) {
+        console.log("[track-view] Using fallback IP:", ip);
+        return ip;
+      }
+    }
+  }
+
+  console.log("[track-view] No IP found in any header");
+  return null;
+}
+
 // Helper: get geo/location info from IP with multiple fallback services
 async function getGeoFromIP(ip: string | null) {
-  if (!ip) {
+  const cleanIp = normalizeIp(ip);
+  if (!cleanIp) {
     console.log("[getGeoFromIP] No IP provided");
     return null;
   }
 
-  const cleanIp = ip.split(",")[0].trim();
   console.log("[getGeoFromIP] Attempting geolocation for IP:", cleanIp);
 
-  // Skip localhost/private IPs
-  if (cleanIp === '127.0.0.1' || cleanIp === '::1' || cleanIp.startsWith('192.168.') || cleanIp.startsWith('10.') || cleanIp.startsWith('172.')) {
+  // Don't waste geo lookup on local/private IPs – will always be "Unknown"
+  if (isPrivateIp(cleanIp)) {
     console.log("[getGeoFromIP] Private/localhost IP detected:", cleanIp);
     return { ip: cleanIp, city: "Local", country: "Local Network" };
   }
@@ -101,27 +176,9 @@ export default async function handler(
       return res.status(500).json({ error: "adminDb not configured" });
     }
 
-    // 1. Get client IP - check multiple headers for mobile/proxy compatibility
-    const ipHeader =
-      (req.headers["x-forwarded-for"] as string | undefined) ||
-      (req.headers["x-real-ip"] as string | undefined) ||
-      (req.headers["cf-connecting-ip"] as string | undefined) || // Cloudflare
-      (req.headers["x-client-ip"] as string | undefined) || // Mobile carriers
-      (req.headers["x-forwarded"] as string | undefined) ||
-      (req.headers["forwarded-for"] as string | undefined) ||
-      (req.headers["forwarded"] as string | undefined) ||
-      (req.connection?.remoteAddress as string | null) ||
-      (req.socket.remoteAddress as string | null) ||
-      null;
-    
-    console.log("[track-view] IP detection headers:", {
-      "x-forwarded-for": req.headers["x-forwarded-for"],
-      "x-real-ip": req.headers["x-real-ip"],
-      "cf-connecting-ip": req.headers["cf-connecting-ip"],
-      "x-client-ip": req.headers["x-client-ip"],
-      "socket-remote": req.socket.remoteAddress,
-      "final-ip": ipHeader
-    });
+    // 1. Get client IP using enhanced detection
+    const clientIp = getClientIp(req);
+    console.log("[track-view] resolved client IP:", clientIp);
 
     // 2. Browser / device info from User-Agent
     const uaString = (req.headers["user-agent"] as string) || "";
@@ -145,19 +202,19 @@ export default async function handler(
     };
 
     // 3. Approx location from IP (with browser geolocation fallback)
-    let geo = await getGeoFromIP(ipHeader);
+    let geo = await getGeoFromIP(clientIp);
     
     // If IP geolocation failed and we have browser coordinates, use those
     if ((!geo || !geo.city) && browserGeo && browserGeo.latitude && browserGeo.longitude) {
       console.log("[track-view] IP geolocation failed, using browser geolocation");
       geo = {
-        ip: ipHeader?.split(",")[0].trim() || null,
+        ip: clientIp,
         city: browserGeo.city || null,
         region: browserGeo.region || null,
         country: browserGeo.country || null,
         latitude: browserGeo.latitude,
         longitude: browserGeo.longitude,
-        source: "browser-geolocation"
+        org: "browser-geolocation"
       };
     }
 
