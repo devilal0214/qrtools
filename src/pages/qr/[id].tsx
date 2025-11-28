@@ -32,8 +32,7 @@ export default function QRPage() {
 
     const handleQR = async () => {
       try {
-        // Keep loading state to show spinner
-        // Don't hide immediately - let loading screen show
+        // Keep loading state visible initially
         
         const ref = doc(db, "qrcodes", id as string);
         const snap = await getDoc(ref);
@@ -57,72 +56,39 @@ export default function QRPage() {
         
         // Function to handle redirect with tracking
         const redirectTo = (url: string) => {
-          // Show loading state during redirect
-          setStatus("loading");
+          // Show black screen with loading immediately
+          document.body.style.backgroundColor = '#000';
+          document.body.style.overflow = 'hidden';
           
-          // Try to get browser geolocation as fallback for mobile
-          const sendTrackingData = (browserGeo?: any) => {
-            const trackPayload = JSON.stringify({ 
-              qrId: id,
-              browserGeo: browserGeo || null
-            });
-            
-            // Fire tracking request without waiting for response
-            if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
-              const blob = new Blob([trackPayload], { type: "application/json" });
-              (navigator as any).sendBeacon("/api/track-view", blob);
-            } else {
-              fetch("/api/track-view", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: trackPayload,
-                keepalive: true,
-              }).catch(() => {});
-            }
-          };
-
-          // Try to get location for better mobile tracking
-          if (navigator.geolocation && /Mobile|Android|iPhone|iPad/.test(navigator.userAgent)) {
-            navigator.geolocation.getCurrentPosition(
-              async (position) => {
-                try {
-                  // Get location info from coordinates
-                  const geoRes = await fetch("/api/browser-geo", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      latitude: position.coords.latitude,
-                      longitude: position.coords.longitude
-                    })
-                  });
-                  
-                  const geoData = await geoRes.json();
-                  sendTrackingData(geoData);
-                } catch (err) {
-                  console.log("Browser geo failed:", err);
-                  sendTrackingData();
-                }
-              },
-              () => {
-                // Geolocation failed or denied, send without location
-                sendTrackingData();
-              },
-              { timeout: 3000, enableHighAccuracy: false }
-            );
+          // Track using IP-only (no location permission popup)
+          const trackPayload = JSON.stringify({ qrId: id });
+          
+          // Fire tracking request without waiting for response
+          if (typeof window !== "undefined" && (navigator as any).sendBeacon) {
+            const blob = new Blob([trackPayload], { type: "application/json" });
+            (navigator as any).sendBeacon("/api/track-view", blob);
           } else {
-            // Not mobile or geolocation not available
-            sendTrackingData();
+            fetch("/api/track-view", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: trackPayload,
+              keepalive: true,
+            }).catch(() => {});
           }
+          
+          
+          // Show loading state briefly then redirect
+          setStatus("loading");
           
           // Immediate redirect for fastest performance
           setTimeout(() => {
             window.location.replace(url);
-          }, 0);
+          }, 100); // Very brief delay to show loading
           
           // Fallback redirect in case replace fails
           setTimeout(() => {
             window.location.href = url;
-          }, 100);
+          }, 200);
         };
 
         // ========== SOCIALS ==========
