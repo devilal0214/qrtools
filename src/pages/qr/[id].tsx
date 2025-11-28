@@ -114,15 +114,15 @@ export default function QRPage() {
             sendTrackingData();
           }
           
-          // Redirect after showing loading screen for a moment
+          // Immediate redirect for fastest performance
           setTimeout(() => {
             window.location.replace(url);
-          }, 500); // Show loading for 500ms
+          }, 0);
           
           // Fallback redirect in case replace fails
           setTimeout(() => {
             window.location.href = url;
-          }, 1000);
+          }, 100);
         };
 
         // ========== SOCIALS ==========
