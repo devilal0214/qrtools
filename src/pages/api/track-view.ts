@@ -31,51 +31,78 @@ function isPrivateIp(ip: string | null): boolean {
 
 // Get best-guess client IP behind proxies / CDNs
 function getClientIp(req: NextApiRequest): string | null {
-  // Check multiple headers commonly used by proxies and CDNs
-  const headers = [
-    req.headers["cf-connecting-ip"], // Cloudflare
-    req.headers["x-client-ip"], // Mobile carriers
-    req.headers["x-forwarded-for"], // Standard proxy
-    req.headers["x-real-ip"], // Nginx
-    req.headers["x-forwarded"],
-    req.headers["forwarded-for"],
-    req.headers["forwarded"],
-    req.connection?.remoteAddress,
-    req.socket.remoteAddress
+  // All possible IP headers in order of preference
+  const possibleHeaders = [
+    'cf-connecting-ip',        // Cloudflare
+    'cf-pseudo-ipv4',         // Cloudflare alternative
+    'x-client-ip',            // Mobile carriers, some proxies
+    'x-forwarded-for',        // Standard proxy header
+    'x-real-ip',              // Nginx proxy
+    'x-cluster-client-ip',    // Cluster environments
+    'x-forwarded',            // Variant
+    'forwarded-for',          // Variant
+    'forwarded',              // RFC 7239
+    'x-appengine-remote-addr' // Google App Engine
   ];
 
-  console.log("[track-view] IP detection headers:", {
-    "cf-connecting-ip": req.headers["cf-connecting-ip"],
-    "x-client-ip": req.headers["x-client-ip"],
-    "x-forwarded-for": req.headers["x-forwarded-for"],
-    "x-real-ip": req.headers["x-real-ip"],
-    "socket-remote": req.socket.remoteAddress
+  const headerValues: any = {};
+  const allIps: string[] = [];
+
+  // Collect all IP addresses from headers
+  possibleHeaders.forEach(headerName => {
+    const value = req.headers[headerName];
+    if (value) {
+      headerValues[headerName] = value;
+      const ips = (Array.isArray(value) ? value.join(',') : value as string)
+        .split(',').map(ip => normalizeIp(ip)).filter(Boolean) as string[];
+      allIps.push(...ips);
+    }
   });
 
-  // Try each header in order of preference
-  for (const header of headers) {
-    if (header) {
-      const ip = normalizeIp(header as string);
+  // Also check connection IPs
+  if (req.connection?.remoteAddress) {
+    headerValues['connection-remote'] = req.connection.remoteAddress;
+    const ip = normalizeIp(req.connection.remoteAddress);
+    if (ip) allIps.push(ip);
+  }
+  if (req.socket?.remoteAddress) {
+    headerValues['socket-remote'] = req.socket.remoteAddress;
+    const ip = normalizeIp(req.socket.remoteAddress);
+    if (ip) allIps.push(ip);
+  }
+
+  console.log('[track-view] All IP headers:', headerValues);
+  console.log('[track-view] All extracted IPs:', allIps);
+
+  // First try to find any public IP
+  for (const ip of allIps) {
+    if (ip && !isPrivateIp(ip)) {
+      console.log('[track-view] Found public IP:', ip);
+      return ip;
+    }
+  }
+
+  // If no public IP, try to get real IP from x-forwarded-for chain
+  const xForwarded = req.headers['x-forwarded-for'];
+  if (xForwarded) {
+    const forwardedIps = (Array.isArray(xForwarded) ? xForwarded[0] : xForwarded)
+      .split(',').map(ip => normalizeIp(ip)).filter(Boolean) as string[];
+    
+    console.log('[track-view] X-Forwarded-For chain:', forwardedIps);
+    
+    // The first IP in x-forwarded-for should be the original client
+    for (const ip of forwardedIps) {
       if (ip && !isPrivateIp(ip)) {
-        console.log("[track-view] Using public IP from header:", ip);
+        console.log('[track-view] Using first public IP from X-Forwarded-For:', ip);
         return ip;
       }
     }
   }
 
-  // If no public IP found, use the first available IP (even if private)
-  for (const header of headers) {
-    if (header) {
-      const ip = normalizeIp(header as string);
-      if (ip) {
-        console.log("[track-view] Using fallback IP:", ip);
-        return ip;
-      }
-    }
-  }
-
-  console.log("[track-view] No IP found in any header");
-  return null;
+  // Use any available IP as fallback (even private)
+  const fallbackIp = allIps.find(ip => ip) || null;
+  console.log('[track-view] Using fallback IP:', fallbackIp);
+  return fallbackIp;
 }
 
 // Helper: get geo/location info from IP with multiple fallback services

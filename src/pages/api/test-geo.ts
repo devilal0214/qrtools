@@ -7,31 +7,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // Get the client IP using the same logic as track-view
-    const headers = [
-      req.headers["cf-connecting-ip"],
-      req.headers["x-client-ip"], 
-      req.headers["x-forwarded-for"],
-      req.headers["x-real-ip"],
-      req.headers["x-forwarded"],
-      req.headers["forwarded-for"],
-      req.headers["forwarded"],
-      req.connection?.remoteAddress,
-      req.socket.remoteAddress
-    ];
+    // Get all possible IP headers for debugging
+    const allHeaders = {
+      'cf-connecting-ip': req.headers['cf-connecting-ip'],
+      'cf-pseudo-ipv4': req.headers['cf-pseudo-ipv4'],
+      'x-client-ip': req.headers['x-client-ip'],
+      'x-forwarded-for': req.headers['x-forwarded-for'],
+      'x-real-ip': req.headers['x-real-ip'],
+      'x-cluster-client-ip': req.headers['x-cluster-client-ip'],
+      'x-forwarded': req.headers['x-forwarded'],
+      'forwarded-for': req.headers['forwarded-for'],
+      'forwarded': req.headers['forwarded'],
+      'x-appengine-remote-addr': req.headers['x-appengine-remote-addr'],
+      'connection-remote': req.connection?.remoteAddress,
+      'socket-remote': req.socket?.remoteAddress
+    };
 
-    let clientIp = null;
-    for (const header of headers) {
-      if (header) {
-        const ip = (header as string).split(",")[0].trim();
-        if (ip.startsWith("::ffff:")) {
-          clientIp = ip.slice(7);
-        } else {
-          clientIp = ip;
-        }
-        if (clientIp) break;
+    // Extract all possible IPs
+    const allIps: string[] = [];
+    Object.entries(allHeaders).forEach(([key, value]) => {
+      if (value) {
+        const ips = (Array.isArray(value) ? value.join(',') : value as string)
+          .split(',').map(ip => {
+            const cleaned = ip.trim();
+            return cleaned.startsWith("::ffff:") ? cleaned.slice(7) : cleaned;
+          }).filter(Boolean);
+        allIps.push(...ips);
       }
-    }
+    });
+
+    // Find the first public IP
+    const isPrivate = (ip: string) => {
+      return ip === '127.0.0.1' || ip === '::1' || 
+             ip.startsWith('10.') || ip.startsWith('192.168.') ||
+             (ip.startsWith('172.') && parseInt(ip.split('.')[1]) >= 16 && parseInt(ip.split('.')[1]) <= 31);
+    };
+
+    const clientIp = allIps.find(ip => !isPrivate(ip)) || allIps[0] || null;
 
     // Test geolocation services
     const testResults = [];
@@ -88,13 +100,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({
       detectedIP: clientIp,
-      headers: {
-        "cf-connecting-ip": req.headers["cf-connecting-ip"],
-        "x-client-ip": req.headers["x-client-ip"],
-        "x-forwarded-for": req.headers["x-forwarded-for"],
-        "x-real-ip": req.headers["x-real-ip"],
-        "socket-remote": req.socket.remoteAddress
-      },
+      allHeaders: allHeaders,
+      allExtractedIPs: allIps,
+      publicIPs: allIps.filter(ip => !isPrivate(ip)),
+      privateIPs: allIps.filter(ip => isPrivate(ip)),
       geolocationTests: testResults
     });
 
