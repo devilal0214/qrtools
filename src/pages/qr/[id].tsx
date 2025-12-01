@@ -32,12 +32,8 @@ export default function QRPage() {
 
     const handleQR = async () => {
       try {
-        // Make page black immediately on client
-        if (typeof document !== "undefined") {
-          document.body.style.backgroundColor = "#000";
-          document.body.style.color = "transparent";
-        }
-
+        // Keep loading state visible initially
+        
         const ref = doc(db, "qrcodes", id as string);
         const snap = await getDoc(ref);
 
@@ -60,6 +56,7 @@ export default function QRPage() {
 
         // ---------- shared redirect helper ----------
         const redirectTo = (url: string) => {
+          // Track detailed view (IP, browser, etc) via API using sendBeacon for instant redirect
           const trackPayload = JSON.stringify({ qrId: id });
 
           // Fire tracking request without blocking redirect
@@ -84,14 +81,12 @@ export default function QRPage() {
             // tracking failure is non-fatal for redirect
             console.error("Error firing track-view:", e);
           }
-
-          // Immediate redirect (replace + href as extra safety)
-          if (typeof window !== "undefined") {
-            setTimeout(() => {
-              window.location.replace(url);
-            }, 0);
-            window.location.href = url;
-          }
+          
+          // Immediate redirect using multiple methods for maximum compatibility
+          setTimeout(() => {
+            window.location.replace(url);
+          }, 0);
+          window.location.href = url;
         };
 
         // ---------- SOCIALS ----------
