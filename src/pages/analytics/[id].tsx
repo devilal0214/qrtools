@@ -1,4 +1,3 @@
-// pages/public/analytics/[id].tsx
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import {
