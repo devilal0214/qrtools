@@ -23,6 +23,7 @@
     "firebase": "^10.5.2",
     "firebase-admin": "^13.2.0",
     "formidable": "^3.5.4",
+    "html2canvas": "^1.4.1",
     "nanoid": "^5.1.6",
     "next": "13.5.11",
     "nodemailer": "^6.10.0",

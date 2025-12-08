@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  orderBy,
+  doc,
+  setDoc,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { nanoid } from "nanoid";
 
 interface QRCode {
   id: string;
@@ -24,14 +33,8 @@ interface ScanRecord {
     latitude?: number | null;
     longitude?: number | null;
   };
-  browser?: {
-    name?: string | null;
-    version?: string | null;
-  };
-  os?: {
-    name?: string | null;
-    version?: string | null;
-  };
+  browser?: { name?: string | null; version?: string | null };
+  os?: { name?: string | null; version?: string | null };
   device?: {
     type?: string | null;
     vendor?: string | null;
@@ -64,9 +67,49 @@ export default function ScanAnalyticsModal({
     null
   );
 
+  // share link state
+  const [publicUrl, setPublicUrl] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // ---- generate public analytics link ----
+  const generateShareLink = async () => {
+    try {
+      setShareLoading(true);
+      const token = nanoid(16);
+
+      await setDoc(
+        doc(db, "publicAnalytics", qrCode.id),
+        {
+          qrId: qrCode.id,
+          token,
+          createdAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      const url = `${origin}/public/analytics/${qrCode.id}?token=${token}`;
+      setPublicUrl(url);
+
+      try {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+      } catch {
+        // ignore clipboard failure
+      }
+    } catch (err) {
+      console.error("Failed to generate public link:", err);
+      alert("Failed to generate share link. Please try again.");
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  // ---- existing fetch scans logic ----
   useEffect(() => {
     const fetchScans = async () => {
-      // Safety: agar kisi reason se qrCode.id empty aa jaye
       if (!qrCode?.id) {
         setLoading(false);
         setErrorMessage("QR ID missing – cannot load analytics.");
@@ -76,7 +119,6 @@ export default function ScanAnalyticsModal({
       try {
         setLoading(true);
 
-        // Sirf is QR ke scans fetch kar rahe hain
         const q = query(
           collection(db, "scans"),
           where("qrId", "==", qrCode.id),
@@ -91,7 +133,6 @@ export default function ScanAnalyticsModal({
 
         setScans(records);
 
-        // ---- Aggregate by location ----
         const locationMap = new Map<string, LocationStat>();
 
         records.forEach((rec) => {
@@ -114,8 +155,7 @@ export default function ScanAnalyticsModal({
             });
           }
 
-          const obj = locationMap.get(key)!;
-          obj.count += 1;
+          locationMap.get(key)!.count += 1;
         });
 
         const statsArray = Array.from(locationMap.values()).sort(
@@ -133,11 +173,11 @@ export default function ScanAnalyticsModal({
     };
 
     fetchScans();
-  }, [qrCode.id, qrCode]);
+  }, [qrCode.id]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full mx-4 max-h-[82vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <div>
@@ -159,7 +199,32 @@ export default function ScanAnalyticsModal({
           </button>
         </div>
 
-        {/* Content */}
+        {/* Share section */}
+        <div className="px-6 pt-4 pb-3 border-b bg-gray-50">
+          <button
+            onClick={generateShareLink}
+            disabled={shareLoading}
+            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60"
+          >
+            {shareLoading ? "Generating link…" : "Share analytics"}
+          </button>
+
+          {publicUrl && (
+            <div className="mt-3 text-xs bg-white border border-gray-200 rounded-lg p-3">
+              <p className="text-[11px] text-gray-500 mb-1">
+                Public share link:
+              </p>
+              <p className="font-mono break-all text-gray-800">{publicUrl}</p>
+              <p className="text-green-600 mt-1">
+                {copied
+                  ? "Copied to clipboard!"
+                  : "Copy & send this link to your client."}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Main content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {loading ? (
             <div className="flex items-center justify-center py-10">
@@ -178,19 +243,19 @@ export default function ScanAnalyticsModal({
               {/* Top stats */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="border rounded-xl p-4">
-                  <p className="text-xs text-gray-500">Total Scans</p>
+                  <p className="text-xs text-gray-500">Total scans</p>
                   <p className="text-2xl font-bold text-gray-900 mt-1">
                     {qrCode.scans ?? scans.length}
                   </p>
                 </div>
                 <div className="border rounded-xl p-4">
-                  <p className="text-xs text-gray-500">Unique Locations</p>
+                  <p className="text-xs text-gray-500">Unique locations</p>
                   <p className="text-2xl font-bold text-gray-900 mt-1">
                     {locationStats.length}
                   </p>
                 </div>
                 <div className="border rounded-xl p-4">
-                  <p className="text-xs text-gray-500">Most Active Location</p>
+                  <p className="text-xs text-gray-500">Most active location</p>
                   <p className="text-sm font-semibold text-gray-900 mt-1">
                     {locationStats[0]?.key || "—"}
                   </p>
@@ -202,9 +267,9 @@ export default function ScanAnalyticsModal({
                 </div>
               </div>
 
-              {/* Locations + detail list */}
+              {/* Locations + details */}
               <div className="grid md:grid-cols-2 gap-6">
-                {/* Left: aggregated locations */}
+                {/* Left: locations */}
                 <div>
                   <h4 className="text-sm font-semibold text-gray-800 mb-3">
                     Scans by location

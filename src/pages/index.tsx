@@ -13,6 +13,7 @@ import FileUploadBox from "@/components/FileUploadBox";
 import { usePlanFeatures } from "@/hooks/usePlanFeatures";
 import Banner from "@/components/Banner";
 import { generateNanoCode } from "@/utils/nano";
+import html2canvas from "html2canvas";
 
 const getBaseUrl = () => {
   if (process.env.NEXT_PUBLIC_BASE_URL) {
@@ -284,13 +285,35 @@ const SOCIAL_PLATFORMS = [
   },
 ] as const;
 
+// Logo presets meta for SVG export & UI
+const LOGO_PRESETS_META: Record<string, { color: string; label: string }> = {
+  none: { color: "#E5E7EB", label: "None" },
+  whatsapp: { color: "#25D366", label: "WA" },
+  link: { color: "#6366F1", label: "Link" },
+  location: { color: "#F97373", label: "Loc" },
+  wifi: { color: "#14B8A6", label: "WiFi" },
+};
+
+interface QRDoc {
+  type: string;
+  content: string;
+  isActive?: boolean;
+  settings?: {
+    size?: number;
+    fgColor?: string;
+    bgColor?: string;
+    shape?: "square" | "rounded" | "dots";
+  };
+}
+
 export default function Home() {
   const [text, setText] = useState("");
   const [size, setSize] = useState(256);
   const [bgColor, setBgColor] = useState("#FFFFFF");
   const [fgColor, setFgColor] = useState("#000000");
   const [downloadHeight, setDownloadHeight] = useState(1024);
-  const qrRef = useRef<QRCode & SVGSVGElement>(null);
+  const qrRef = useRef<SVGSVGElement | null>(null);
+  const qrPreviewRef = useRef<HTMLDivElement | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -497,6 +520,25 @@ export default function Home() {
     }
 
     try {
+      // If an SVG logo was uploaded, convert it to PNG and upload it so saved
+      // QR docs only store PNG logo URLs (better cross-platform and embeddable)
+      let logoToSave = logoImage;
+      if (logoImage) {
+        try {
+          const converted = await convertLogoToPngDataUrl(logoImage, 256);
+          const dataUrl = converted || logoImage;
+          // If data url (base64 PNG), create File and upload
+          if (dataUrl && dataUrl.startsWith("data:image/png")) {
+            const file = dataUrlToFile(dataUrl, "logo.png");
+            const uploadedUrl = await uploadFile(file, { folder: "logos" });
+            logoToSave = uploadedUrl;
+          }
+        } catch (err) {
+          console.warn("Logo conversion/upload failed during save:", err);
+          // fall back to storing original url if conversion/upload fails
+          logoToSave = logoImage;
+        }
+      }
       setIsLoading(true);
 
       const qrData = {
@@ -512,6 +554,8 @@ export default function Home() {
           fgColor,
           bgColor,
           shape: style.shape,
+          logoImage: logoToSave || null,
+          logoPreset: logoPreset || null,
         },
       };
 
@@ -547,6 +591,53 @@ export default function Home() {
     }
   };
 
+  // Helper: add logo into cloned SVG for SVG export
+  // ---- Helper: get logo markup string ----
+  const getLogoMarkup = (
+    logoImage: string | null,
+    logoPreset: string | null,
+    svgSize = 256
+  ) => {
+    if (!logoImage && (!logoPreset || logoPreset === "none")) return "";
+
+    const size = svgSize;
+    let content = "";
+
+    if (logoImage) {
+      // Use both xlink:href and href for maximum compatibility
+      content = `
+        <image
+          width="60"
+          height="60"
+          x="-30"
+          y="-30"
+          xlink:href="${logoImage}"
+          href="${logoImage}"
+        />
+      `;
+    } else if (logoPreset && logoPreset !== "none") {
+      const meta = LOGO_PRESETS_META[logoPreset];
+      content = `
+        <circle cx="0" cy="0" r="30" fill="${meta.color}" />
+        <text
+          fill="white"
+          font-size="18"
+          font-family="Arial"
+          text-anchor="middle"
+          alignment-baseline="central"
+        >${meta.label}</text>
+      `;
+    }
+
+    return `
+      <g transform="translate(${size / 2}, ${size / 2})">
+        <circle cx="0" cy="0" r="34" fill="white" />
+        ${content}
+      </g>
+    `;
+  };
+
+  // ---- Main download function: PNG + SVG ----
   const downloadQR = async (format: "png" | "svg") => {
     if (!qrRef.current) {
       setError("QR code not ready");
@@ -557,12 +648,79 @@ export default function Home() {
     setError("");
 
     try {
-      const svgElement = qrRef.current;
-
       if (format === "svg") {
-        const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
-        svgClone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-        const svgData = new XMLSerializer().serializeToString(svgClone);
+        // SVG EXPORT WITH LOGO (String Manipulation)
+        const svgElement = qrRef.current as unknown as SVGSVGElement;
+
+        // 1. Serialize existing SVG to string
+        let svgData = new XMLSerializer().serializeToString(svgElement);
+
+        // 2. Ensure xmlns:xlink is present if not already
+        if (!svgData.includes('xmlns:xlink="http://www.w3.org/1999/xlink"')) {
+          svgData = svgData.replace(
+            "<svg",
+            '<svg xmlns:xlink="http://www.w3.org/1999/xlink"'
+          );
+        }
+
+        // 3. Possibly convert SVG logo -> PNG and generate logo markup
+        let logoForInjection = logoImage;
+        if (logoImage) {
+          try {
+            // convert remote or data SVGs to PNG data URLs so they reliably embed in
+            // the exported SVG as raster images
+            const converted = await convertLogoToPngDataUrl(logoImage, 60);
+            if (converted) logoForInjection = converted;
+          } catch (err) {
+            console.warn(
+              "logo conversion failed, will attempt to embed original:",
+              err
+            );
+          }
+        }
+
+        // 3. Generate logo markup
+        const logoMarkup = getLogoMarkup(
+          logoForInjection,
+          logoPreset,
+          svgElement.viewBox.baseVal.width || size || 256
+        );
+
+        // 4. Inject logo markup before closing </svg> tag
+        if (logoMarkup) {
+          console.log(
+            "SVG export: injecting logo markup. logoForInjection startsWith:",
+            logoForInjection?.slice(0, 60)
+          );
+          try {
+            // Use DOM methods to ensure correct namespace handling and attributes
+            const clone = svgElement.cloneNode(true) as SVGSVGElement;
+            const parser = new DOMParser();
+            const parsed = parser.parseFromString(logoMarkup, "image/svg+xml");
+            const groupNode = parsed.documentElement;
+            // Import into the current document and append
+            const imported = document.importNode(groupNode, true);
+            if (!clone.hasAttribute("xmlns:xlink")) {
+              clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+            }
+            clone.appendChild(imported);
+            // Serialize clone
+            svgData = new XMLSerializer().serializeToString(clone);
+          } catch (err) {
+            console.warn(
+              "SVG export: DOM injection failed, falling back to string replacement",
+              err
+            );
+            svgData = svgData.replace("</svg>", `${logoMarkup}</svg>`);
+          }
+          // Further log that the SVG data now contains image tag
+          if (!svgData.includes("<image")) {
+            console.warn(
+              "SVG export: logo markup injected but no <image> tag found in serialized SVG (possible conversion or browser issue)"
+            );
+          }
+        }
+
         const svgBlob = new Blob([svgData], {
           type: "image/svg+xml;charset=utf-8",
         });
@@ -575,36 +733,29 @@ export default function Home() {
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(downloadUrl);
-      } else {
-        const canvas = document.createElement("canvas");
-        canvas.width = downloadHeight;
-        canvas.height = downloadHeight;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("Could not get canvas context");
 
-        const svgData = new XMLSerializer().serializeToString(svgElement);
-        const svgBlob = new Blob([svgData], {
-          type: "image/svg+xml;charset=utf-8",
-        });
-        const url = URL.createObjectURL(svgBlob);
-
-        const img = new Image();
-        await new Promise((resolve, reject) => {
-          img.onload = resolve as any;
-          img.onerror = reject as any;
-          img.src = url;
-        });
-
-        ctx.drawImage(img, 0, 0, downloadHeight, downloadHeight);
-        URL.revokeObjectURL(url);
-
-        const link = document.createElement("a");
-        link.download = `qrcode.png`;
-        link.href = canvas.toDataURL("image/png");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        return; // SVG done, no PNG logic
       }
+
+      // ---------------- PNG (html2canvas) – already working ----------------
+      const previewNode = qrPreviewRef.current;
+      if (!previewNode) {
+        setError("QR preview not ready");
+        return;
+      }
+
+      const canvas = await html2canvas(previewNode, {
+        backgroundColor: null,
+        scale: 4,
+        useCORS: true,
+      });
+
+      const link = document.createElement("a");
+      link.download = `qrcode.png`;
+      link.href = canvas.toDataURL("image/png");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     } catch (err) {
       console.error("Error:", err);
       setError("Failed to process QR code");
@@ -643,12 +794,188 @@ export default function Home() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setLogoImage(reader.result as string);
-      setLogoPreset(null);
+    const convertSvgToPngDataUrl = async (svgFile: File, outSize = 256) => {
+      const readText = (f: File) =>
+        new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result || ""));
+          r.onerror = reject;
+          r.readAsText(f);
+        });
+
+      try {
+        const svgText = await readText(svgFile);
+        const svgBlob = new Blob([svgText], {
+          type: "image/svg+xml;charset=utf-8",
+        });
+        const url = URL.createObjectURL(svgBlob);
+
+        const img = new Image();
+        // Allow transparent backgrounds
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = outSize;
+            canvas.height = outSize;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) throw new Error("2D context not available");
+            ctx.clearRect(0, 0, outSize, outSize);
+            // Preserve aspect ratio and center the logo inside the canvas
+            const ratio = Math.min(outSize / img.width, outSize / img.height);
+            const dw = img.width * ratio;
+            const dh = img.height * ratio;
+            const dx = (outSize - dw) / 2;
+            const dy = (outSize - dh) / 2;
+            ctx.drawImage(img, dx, dy, dw, dh);
+            const png = canvas.toDataURL("image/png");
+            URL.revokeObjectURL(url);
+            resolvePng(png);
+          } catch (err) {
+            URL.revokeObjectURL(url);
+            rejectPng(err);
+          }
+        };
+        img.onerror = (err) => {
+          URL.revokeObjectURL(url);
+          rejectPng(err);
+        };
+        let resolvePng: (v: string) => void;
+        let rejectPng: (e: any) => void;
+        const promise = new Promise<string>((res, rej) => {
+          resolvePng = res;
+          rejectPng = rej;
+        });
+        img.src = url;
+        return promise;
+      } catch (err) {
+        throw err;
+      }
     };
-    reader.readAsDataURL(file);
+
+    // If SVG, convert to PNG; otherwise just read data URL
+    if (file.type === "image/svg+xml") {
+      convertSvgToPngDataUrl(file, 256)
+        .then((pngDataUrl) => {
+          setLogoImage(pngDataUrl);
+          setLogoPreset(null);
+        })
+        .catch((err) => {
+          console.error("Failed to convert SVG to PNG:", err);
+          setError(
+            "Failed to process SVG logo. Please use a PNG or try a different SVG."
+          );
+        });
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setLogoImage(reader.result as string);
+        setLogoPreset(null);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Convert a logo (data URL or remote URL) to a PNG data URL. This will attempt
+  // to fetch remote SVGs and render them to a canvas, outputting a PNG Data URL
+  // that can safely be embedded inside another SVG.
+  const convertLogoToPngDataUrl = async (logoUrl: string, outSize = 256) => {
+    if (!logoUrl) return null;
+    // Already PNG data URL
+    if (logoUrl.startsWith("data:image/png")) return logoUrl;
+
+    // Helper to load image into a canvas and export PNG data URL
+    const loadImageToPng = (src: string) =>
+      new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = outSize;
+            canvas.height = outSize;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return reject(new Error("2D context unavailable"));
+            ctx.clearRect(0, 0, outSize, outSize);
+            const ratio = Math.min(outSize / img.width, outSize / img.height);
+            const dw = img.width * ratio;
+            const dh = img.height * ratio;
+            const dx = (outSize - dw) / 2;
+            const dy = (outSize - dh) / 2;
+            ctx.drawImage(img, dx, dy, dw, dh);
+            const png = canvas.toDataURL("image/png");
+            resolve(png);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        img.onerror = reject;
+        img.src = src;
+      });
+
+    try {
+      if (
+        logoUrl.startsWith("data:image/svg+xml") ||
+        logoUrl.trim().startsWith("<svg")
+      ) {
+        // Data URL SVG: treat directly
+        return await loadImageToPng(logoUrl);
+      }
+
+      if (logoUrl.startsWith("data:")) {
+        // Other data URL types (e.g., base64-encoded SVG) — try loading directly
+        try {
+          return await loadImageToPng(logoUrl);
+        } catch (err) {
+          console.warn("Failed to load logo data URL into canvas", err);
+        }
+      }
+
+      // Otherwise, treat logoUrl as a remote URL. Try to fetch and convert.
+      try {
+        const resp = await fetch(logoUrl);
+        if (!resp.ok) throw new Error("Failed to fetch logo");
+        const contentType = resp.headers.get("Content-Type") || "";
+        // If it's an image (PNG/JPEG), load it directly
+        if (contentType.startsWith("image/")) {
+          return await loadImageToPng(logoUrl);
+        }
+        // If it's SVG text, convert to a blob URL
+        const svgText = await resp.text();
+        const blob = new Blob([svgText], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(blob);
+        try {
+          const result = await loadImageToPng(url);
+          URL.revokeObjectURL(url);
+          return result;
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          throw err;
+        }
+      } catch (err) {
+        // Finally, try to load the remote URL directly in case of cross-origin images
+        try {
+          return await loadImageToPng(logoUrl);
+        } catch (err2) {
+          throw err2 || err;
+        }
+      }
+    } catch (err) {
+      console.error("convertLogoToPngDataUrl failed:", err);
+      return null;
+    }
+  };
+
+  const dataUrlToFile = (dataUrl: string, filename: string) => {
+    const arr = dataUrl.split(",");
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : "image/png";
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
   };
 
   const renderSocialsInput = () => {
@@ -989,16 +1316,16 @@ export default function Home() {
       return text || "";
     })();
 
-    const QR_PIXEL_SIZE = 256;
+     const QR_PIXEL_SIZE = 256;
     const QRCore = (
       <div className="relative inline-block">
         <QRCode
           value={qrValue}
-          size={QR_PIXEL_SIZE}
+          size={QR_PIXEL_SIZE} 
           bgColor={bgColor}
           fgColor={fgColor}
           level="L" // lowest density
-          ref={qrRef}
+          ref={qrRef as any}
           style={{ width: QR_PIXEL_SIZE, height: QR_PIXEL_SIZE }}
           viewBox={`0 0 ${QR_PIXEL_SIZE} ${QR_PIXEL_SIZE}`}
           className={
@@ -1009,7 +1336,7 @@ export default function Home() {
               : ""
           }
         />
-        {(logoImage || logoPreset) && (
+        {(logoImage || (logoPreset && logoPreset !== "none")) && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">
               {logoImage ? (
@@ -1020,7 +1347,7 @@ export default function Home() {
                 />
               ) : (
                 <span className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-semibold">
-                  {logoPreset?.slice(0, 2).toUpperCase()}
+                  {logoPreset ? LOGO_PRESETS_META[logoPreset].label : ""}
                 </span>
               )}
             </div>
@@ -1384,34 +1711,32 @@ export default function Home() {
 
                   {/* preset round icons */}
                   <div className="flex gap-3 overflow-x-auto pb-1">
-                    {[
-                      { id: "none", color: "#E5E7EB", label: "None" },
-                      { id: "whatsapp", color: "#25D366", label: "WA" },
-                      { id: "link", color: "#6366F1", label: "Link" },
-                      { id: "location", color: "#F97373", label: "Loc" },
-                      { id: "wifi", color: "#14B8A6", label: "WiFi" },
-                    ].map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          if (item.id === "none") {
-                            setLogoImage(null);
-                            setLogoPreset(null);
-                          } else {
-                            setLogoImage(null);
-                            setLogoPreset(item.id);
-                          }
-                        }}
-                        className={`w-12 h-12 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                          logoPreset === item.id
-                            ? "ring-2 ring-blue-500 ring-offset-2"
-                            : ""
-                        }`}
-                        style={{ backgroundColor: item.color }}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
+                    {["none", "whatsapp", "link", "location", "wifi"].map(
+                      (id) => (
+                        <button
+                          key={id}
+                          onClick={() => {
+                            if (id === "none") {
+                              setLogoImage(null);
+                              setLogoPreset(null);
+                            } else {
+                              setLogoImage(null);
+                              setLogoPreset(id);
+                            }
+                          }}
+                          className={`w-12 h-12 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
+                            logoPreset === id
+                              ? "ring-2 ring-blue-500 ring-offset-2"
+                              : ""
+                          }`}
+                          style={{
+                            backgroundColor: LOGO_PRESETS_META[id].color,
+                          }}
+                        >
+                          {LOGO_PRESETS_META[id].label}
+                        </button>
+                      )
+                    )}
                   </div>
 
                   {/* Upload (SVG + PNG only) */}
@@ -1447,16 +1772,18 @@ export default function Home() {
 
                 {/* Grey preview area */}
                 <div className="flex items-center justify-center py-10 px-4 min-h-[400px]">
-                  {isLoading ? (
-                    <div className="animate-pulse flex flex-col itemscenter">
-                      <div className="w-32 h-32 bg-gray-200" />
-                      <p className="mt-4 text-sm text-gray-400">
-                        Generating QR code...
-                      </p>
-                    </div>
-                  ) : (
-                    renderQRFrame()
-                  )}
+                  <div ref={qrPreviewRef}>
+                    {isLoading ? (
+                      <div className="animate-pulse flex flex-col itemscenter">
+                        <div className="w-32 h-32 bg-gray-200" />
+                        <p className="mt-4 text-sm text-gray-400">
+                          Generating QR code...
+                        </p>
+                      </div>
+                    ) : (
+                      renderQRFrame()
+                    )}
+                  </div>
                 </div>
 
                 {/* Download button + dropdown inside grey box */}
