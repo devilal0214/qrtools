@@ -16,6 +16,14 @@ interface QRCode {
   scans: number;
   isActive: boolean;
   title?: string;  // Add title to interface
+  settings?: {
+    size?: number;
+    fgColor?: string;
+    bgColor?: string;
+    shape?: string;
+    logoImage?: string | null;
+    logoPreset?: string | null;
+  };
 }
 
 const truncateTitle = (title: string, maxLength: number = 30) => {

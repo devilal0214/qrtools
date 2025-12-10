@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test QR Logo Download</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { border: 1px solid #ccc; padding: 20px; margin: 20px 0; }
+        .test-results { margin-top: 10px; padding: 10px; background: #f5f5f5; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>QR Code Logo Download Test</h1>
+    
+    <div class="test-section">
+        <h2>Test Instructions</h2>
+        <ol>
+            <li>Go to <a href="http://localhost:3001" target="_blank">http://localhost:3001</a></li>
+            <li>Create a QR code with any content</li>
+            <li>In the "Design Your QR" section, upload a PNG or SVG logo</li>
+            <li>Click "Download QR" and test both PNG and SVG formats</li>
+            <li>Verify that the downloaded files contain both QR code and logo</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>Expected Behavior</h2>
+        <ul>
+            <li><strong>PNG Download:</strong> Should include QR code with logo overlay</li>
+            <li><strong>SVG Download:</strong> Should include QR code with logo as embedded image or shape</li>
+            <li><strong>No Logo:</strong> Should download clean QR code without logo elements</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>Debug Information</h2>
+        <p>Open browser developer console to see debug logs during download:</p>
+        <ul>
+            <li><code>SVG export debug:</code> - Shows logo detection status</li>
+            <li><code>PNG export debug:</code> - Shows PNG conversion process</li>
+            <li><code>Logo successfully included:</code> - Confirms successful injection</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>Common Issues to Check</h2>
+        <ul>
+            <li><strong>Logo not showing:</strong> Check if logoImage or logoPreset values are set</li>
+            <li><strong>PNG only shows logo:</strong> html2canvas fallback should create complete image</li>
+            <li><strong>SVG missing logo:</strong> Logo markup injection failed</li>
+            <li><strong>Console errors:</strong> Image loading or canvas rendering issues</li>
+        </ul>
+    </div>
+
+    <script>
+        console.log("QR Logo Download Test Page Loaded");
+        console.log("Navigate to http://localhost:3001 to test the application");
+    </script>
+</body>
+</html>

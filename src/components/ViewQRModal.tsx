@@ -11,6 +11,8 @@ interface QRCodeData {
     fgColor?: string;
     bgColor?: string;
     shape?: string;
+    logoImage?: string | null;
+    logoPreset?: string | null;
   };
 }
 
@@ -18,6 +20,15 @@ interface ViewQRModalProps {
   qrCode: QRCodeData;
   onClose: () => void;
 }
+
+// Logo presets meta for SVG export & UI
+const LOGO_PRESETS_META: Record<string, { color: string; label: string }> = {
+  none: { color: "#E5E7EB", label: "None" },
+  whatsapp: { color: "#25D366", label: "WA" },
+  link: { color: "#6366F1", label: "Link" },
+  location: { color: "#F97373", label: "Loc" },
+  wifi: { color: "#14B8A6", label: "WiFi" },
+};
 
 export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
   // default to 180 to match the index page QR density
@@ -27,6 +38,10 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
   const [shape, setShape] = useState(qrCode.settings?.shape || "square");
   const [copied, setCopied] = useState(false);
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
+  
+  // Logo settings from saved QR code
+  const logoImage = qrCode.settings?.logoImage || null;
+  const logoPreset = qrCode.settings?.logoPreset || null;
 
   // For MULTI_URL we split by newlines, otherwise it's a single value
   const urls = useMemo(() => {
@@ -62,14 +77,169 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
     }
   };
 
+  // Convert a logo (data URL or remote URL) to a PNG data URL for embedding
+  const convertLogoToPngDataUrl = async (logoUrl: string, outSize = 256) => {
+    if (!logoUrl) return null;
+    if (logoUrl.startsWith("data:image/png")) return logoUrl;
+
+    const loadImageToPng = (src: string) =>
+      new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = outSize;
+            canvas.height = outSize;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return reject(new Error("2D context unavailable"));
+            ctx.clearRect(0, 0, outSize, outSize);
+            const ratio = Math.min(outSize / img.width, outSize / img.height);
+            const dw = img.width * ratio;
+            const dh = img.height * ratio;
+            const dx = (outSize - dw) / 2;
+            const dy = (outSize - dh) / 2;
+            ctx.drawImage(img, dx, dy, dw, dh);
+            const png = canvas.toDataURL("image/png");
+            resolve(png);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        img.onerror = reject;
+        img.src = src;
+      });
+
+    try {
+      return await loadImageToPng(logoUrl);
+    } catch (err) {
+      console.error("convertLogoToPngDataUrl failed:", err);
+      return null;
+    }
+  };
+
+  // Generate logo markup for SVG export
+  const getLogoMarkup = (
+    logoImage: string | null,
+    logoPreset: string | null,
+    svgSize = 256
+  ) => {
+    if (!logoImage && (!logoPreset || logoPreset === "none")) return "";
+
+    let content = "";
+
+    if (logoImage) {
+      content = `
+        <image
+          width="60"
+          height="60"
+          x="-30"
+          y="-30"
+          xlink:href="${logoImage}"
+          href="${logoImage}"
+        />
+      `;
+    } else if (logoPreset && logoPreset !== "none") {
+      const meta = LOGO_PRESETS_META[logoPreset];
+      content = `
+        <circle cx="0" cy="0" r="30" fill="${meta.color}" />
+        <text
+          fill="white"
+          font-size="18"
+          font-family="Arial"
+          text-anchor="middle"
+          alignment-baseline="central"
+        >${meta.label}</text>
+      `;
+    }
+
+    return `
+      <g transform="translate(${svgSize / 2}, ${svgSize / 2})">
+        <circle cx="0" cy="0" r="34" fill="white" />
+        ${content}
+      </g>
+    `;
+  };
+
   const downloadQR = async (format: "png" | "svg") => {
     const svgElement = document.querySelector("#qr-preview svg");
     if (!svgElement) return;
 
     try {
       if (format === "svg") {
-        const svgData = new XMLSerializer().serializeToString(svgElement);
-        const svgBlob = new Blob([svgData], { type: "image/svg+xml" });
+        // SVG EXPORT WITH LOGO
+        let svgData = new XMLSerializer().serializeToString(svgElement);
+
+        // Ensure xmlns:xlink is present if not already
+        if (!svgData.includes('xmlns:xlink="http://www.w3.org/1999/xlink"')) {
+          svgData = svgData.replace(
+            "<svg",
+            '<svg xmlns:xlink="http://www.w3.org/1999/xlink"'
+          );
+        }
+
+        // Convert SVG logo to PNG and generate logo markup
+        let logoForInjection = logoImage;
+        if (logoImage) {
+          try {
+            const converted = await convertLogoToPngDataUrl(logoImage, 60);
+            if (converted) logoForInjection = converted;
+          } catch (err) {
+            console.warn("logo conversion failed, will attempt to embed original:", err);
+          }
+        }
+
+        // Generate logo markup
+        const logoMarkup = getLogoMarkup(
+          logoForInjection,
+          logoPreset,
+          (svgElement as SVGSVGElement).viewBox.baseVal.width || size || 256
+        );
+
+        console.log("SVG export debug:", {
+          hasLogoImage: !!logoImage,
+          hasLogoPreset: !!(logoPreset && logoPreset !== "none"),
+          logoForInjection: logoForInjection?.slice(0, 100),
+          logoMarkupLength: logoMarkup?.length || 0
+        });
+
+        // Inject logo markup before closing </svg> tag
+        if (logoMarkup) {
+          try {
+            // Use DOM methods for proper namespace handling
+            const clone = (svgElement as SVGSVGElement).cloneNode(true) as SVGSVGElement;
+            const parser = new DOMParser();
+            const parsed = parser.parseFromString(logoMarkup, "image/svg+xml");
+            
+            if (parsed.documentElement && !parsed.querySelector('parsererror')) {
+              const groupNode = parsed.documentElement;
+              const imported = document.importNode(groupNode, true);
+              if (!clone.hasAttribute("xmlns:xlink")) {
+                clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+              }
+              clone.appendChild(imported);
+              svgData = new XMLSerializer().serializeToString(clone);
+              console.log("SVG export: Successfully injected logo via DOM methods");
+            } else {
+              throw new Error("Failed to parse logo markup");
+            }
+          } catch (err) {
+            console.warn("DOM injection failed, falling back to string replacement", err);
+            svgData = svgData.replace("</svg>", `${logoMarkup}</svg>`);
+            console.log("SVG export: Used string replacement fallback");
+          }
+          
+          // Verify logo was injected
+          if (!svgData.includes("<image") && !svgData.includes("<circle")) {
+            console.warn("SVG export: No logo elements found in final SVG");
+          } else {
+            console.log("SVG export: Logo successfully included in final SVG");
+          }
+        } else if (logoImage || (logoPreset && logoPreset !== "none")) {
+          console.warn("SVG export: Logo was expected but no logoMarkup generated");
+        }
+
+        const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
         const url = URL.createObjectURL(svgBlob);
 
         const link = document.createElement("a");
@@ -80,23 +250,75 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       } else {
+        // PNG EXPORT WITH LOGO
+        console.log("PNG export debug:", {
+          hasLogoImage: !!logoImage,
+          hasLogoPreset: !!(logoPreset && logoPreset !== "none"),
+          logoImage: logoImage?.slice(0, 100),
+          logoPreset
+        });
+
         const canvas = document.createElement("canvas");
         canvas.width = 1024;
         canvas.height = 1024;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
+        // First render QR code
         const img = new Image();
-        const svgData = new XMLSerializer().serializeToString(svgElement);
+        let svgData = new XMLSerializer().serializeToString(svgElement);
+
+        // Add logo to SVG for PNG export too
+        let logoForInjection = logoImage;
+        if (logoImage) {
+          try {
+            const converted = await convertLogoToPngDataUrl(logoImage, 60);
+            if (converted) {
+              logoForInjection = converted;
+              console.log("PNG export: Logo converted to PNG successfully");
+            }
+          } catch (err) {
+            console.warn("logo conversion failed for PNG export", err);
+          }
+        }
+
+        const logoMarkup = getLogoMarkup(
+          logoForInjection,
+          logoPreset,
+          (svgElement as SVGSVGElement).viewBox.baseVal.width || size || 256
+        );
+
+        console.log("PNG export logoMarkup length:", logoMarkup?.length || 0);
+
+        if (logoMarkup) {
+          if (!svgData.includes('xmlns:xlink="http://www.w3.org/1999/xlink"')) {
+            svgData = svgData.replace(
+              "<svg",
+              '<svg xmlns:xlink="http://www.w3.org/1999/xlink"'
+            );
+          }
+          svgData = svgData.replace("</svg>", `${logoMarkup}</svg>`);
+          console.log("PNG export: Logo markup injected into SVG");
+        }
+
         const svgBlob = new Blob([svgData], { type: "image/svg+xml" });
         const url = URL.createObjectURL(svgBlob);
 
         await new Promise((resolve, reject) => {
-          img.onload = resolve as any;
-          img.onerror = reject as any;
+          img.onload = () => {
+            console.log("PNG export: SVG image loaded successfully");
+            resolve(true);
+          };
+          img.onerror = (err) => {
+            console.error("PNG export: Failed to load SVG image", err);
+            reject(err);
+          };
           img.src = url;
         });
 
+        // Fill background
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, 1024, 1024);
         ctx.drawImage(img, 0, 0, 1024, 1024);
         URL.revokeObjectURL(url);
 
@@ -106,6 +328,7 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        console.log("PNG export: Download completed");
       }
     } catch (err) {
       console.error("Error downloading QR code:", err);
@@ -324,20 +547,44 @@ export default function ViewQRModal({ qrCode, onClose }: ViewQRModalProps) {
                 className="flex items-center justify-center bg-gray-50 p-8 rounded-xl"
               >
                 {currentValue ? (
-                  <QRCode
-                    value={currentValue}
-                    size={size}
-                    fgColor={fgColor}
-                    bgColor={bgColor}
-                    // low error correction = less dense
-                    level="L"
-                    style={{ width: size, height: size }}
-                    viewBox={`0 0 ${size} ${size}`}
-                    className={`
-                      ${shape === "rounded" ? "rounded-2xl" : ""}
-                      ${shape === "dots" ? "rounded-3xl" : ""}
-                    `}
-                  />
+                  <div className="relative inline-block">
+                    <QRCode
+                      value={currentValue}
+                      size={size}
+                      fgColor={fgColor}
+                      bgColor={bgColor}
+                      // low error correction = less dense
+                      level="L"
+                      style={{ width: size, height: size }}
+                      viewBox={`0 0 ${size} ${size}`}
+                      className={`
+                        ${shape === "rounded" ? "rounded-2xl" : ""}
+                        ${shape === "dots" ? "rounded-3xl" : ""}
+                      `}
+                    />
+                    {(logoImage || (logoPreset && logoPreset !== "none")) && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">
+                          {logoImage ? (
+                            <img
+                              src={logoImage}
+                              alt="logo"
+                              className="w-10 h-10 object-contain"
+                            />
+                          ) : (
+                            logoPreset && logoPreset !== "none" && (
+                              <div
+                                className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                                style={{ backgroundColor: LOGO_PRESETS_META[logoPreset]?.color || "#E5E7EB" }}
+                              >
+                                {LOGO_PRESETS_META[logoPreset]?.label || ""}
+                              </div>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <p className="text-sm text-gray-400">
                     No content found for this QR.

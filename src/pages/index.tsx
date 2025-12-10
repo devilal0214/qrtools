@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import QRCode from "react-qr-code";
 import Head from "next/head";
 import AuthModal from "@/components/AuthModal";
@@ -313,6 +313,12 @@ export default function Home() {
   const [fgColor, setFgColor] = useState("#000000");
   const [downloadHeight, setDownloadHeight] = useState(1024);
   const qrRef = useRef<SVGSVGElement | null>(null);
+  const qrCallbackRef = useCallback((node: SVGSVGElement | null) => {
+    qrRef.current = node;
+    if (node) {
+      console.log("QR SVG element mounted:", node.tagName, node.viewBox?.baseVal?.width);
+    }
+  }, []);
   const qrPreviewRef = useRef<HTMLDivElement | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showMore, setShowMore] = useState(false);
@@ -601,27 +607,33 @@ export default function Home() {
     if (!logoImage && (!logoPreset || logoPreset === "none")) return "";
 
     const size = svgSize;
+    // Scale logo size proportionally to viewBox (logo should be ~30% of QR size)
+    const logoScale = size / 256; // If size is 25, scale is 0.0977
+    const logoSize = 80 * logoScale;
+    const circleRadius = 44 * logoScale;
     let content = "";
 
     if (logoImage) {
       // Use both xlink:href and href for maximum compatibility
       content = `
         <image
-          width="60"
-          height="60"
-          x="-30"
-          y="-30"
+          width="${logoSize}"
+          height="${logoSize}"
+          x="${-logoSize / 2}"
+          y="${-logoSize / 2}"
           xlink:href="${logoImage}"
           href="${logoImage}"
         />
       `;
     } else if (logoPreset && logoPreset !== "none") {
       const meta = LOGO_PRESETS_META[logoPreset];
+      const presetRadius = 30 * logoScale;
+      const fontSize = 18 * logoScale;
       content = `
-        <circle cx="0" cy="0" r="30" fill="${meta.color}" />
+        <circle cx="0" cy="0" r="${presetRadius}" fill="${meta.color}" />
         <text
           fill="white"
-          font-size="18"
+          font-size="${fontSize}"
           font-family="Arial"
           text-anchor="middle"
           alignment-baseline="central"
@@ -631,7 +643,7 @@ export default function Home() {
 
     return `
       <g transform="translate(${size / 2}, ${size / 2})">
-        <circle cx="0" cy="0" r="34" fill="white" />
+        <circle cx="0" cy="0" r="${circleRadius}" fill="white" />
         ${content}
       </g>
     `;
@@ -644,16 +656,30 @@ export default function Home() {
       return;
     }
 
+    console.log("=== QR DOWNLOAD STARTED ===");
+    console.log("Format:", format);
+    console.log("Has logoImage:", !!logoImage);
+    console.log("LogoImage value:", logoImage?.slice(0, 100));
+    console.log("Has logoPreset:", !!logoPreset && logoPreset !== "none");
+    console.log("LogoPreset value:", logoPreset);
+
     setIsLoading(true);
     setError("");
 
     try {
       if (format === "svg") {
-        // SVG EXPORT WITH LOGO (String Manipulation)
+        console.log("SVG export: Starting SVG download");
         const svgElement = qrRef.current as unknown as SVGSVGElement;
+        
+        if (!svgElement) {
+          throw new Error("QR SVG element not found");
+        }
+        
+        console.log("SVG export: Element found, tagName:", svgElement.tagName);
 
         // 1. Serialize existing SVG to string
         let svgData = new XMLSerializer().serializeToString(svgElement);
+        console.log("SVG export: Serialized, length:", svgData.length);
 
         // 2. Ensure xmlns:xlink is present if not already
         if (!svgData.includes('xmlns:xlink="http://www.w3.org/1999/xlink"')) {
@@ -666,61 +692,56 @@ export default function Home() {
         // 3. Possibly convert SVG logo -> PNG and generate logo markup
         let logoForInjection = logoImage;
         if (logoImage) {
+          console.log("SVG export: Converting logo, original:", logoImage.slice(0, 50));
           try {
             // convert remote or data SVGs to PNG data URLs so they reliably embed in
             // the exported SVG as raster images
-            const converted = await convertLogoToPngDataUrl(logoImage, 60);
-            if (converted) logoForInjection = converted;
+            const converted = await convertLogoToPngDataUrl(logoImage, 80);
+            if (converted) {
+              logoForInjection = converted;
+              console.log("SVG export: Logo converted successfully, new:", converted.slice(0, 50));
+            } else {
+              console.warn("SVG export: Logo conversion returned null");
+            }
           } catch (err) {
-            console.warn(
-              "logo conversion failed, will attempt to embed original:",
-              err
-            );
+            console.error("SVG export: Logo conversion failed:", err);
           }
         }
 
-        // 3. Generate logo markup
+        // 4. Generate logo markup - use viewBox size to match QR coordinate system
+        const viewBoxSize = svgElement.viewBox?.baseVal?.width || 25;
+        console.log("SVG export: Generating logo markup with viewBox size:", viewBoxSize);
         const logoMarkup = getLogoMarkup(
           logoForInjection,
           logoPreset,
-          svgElement.viewBox.baseVal.width || size || 256
+          viewBoxSize
         );
+        console.log("SVG export: Logo markup generated, length:", logoMarkup?.length || 0);
+        
 
-        // 4. Inject logo markup before closing </svg> tag
+        
+        // 5. Inject logo markup before closing </svg> tag
         if (logoMarkup) {
-          console.log(
-            "SVG export: injecting logo markup. logoForInjection startsWith:",
-            logoForInjection?.slice(0, 60)
-          );
-          try {
-            // Use DOM methods to ensure correct namespace handling and attributes
-            const clone = svgElement.cloneNode(true) as SVGSVGElement;
-            const parser = new DOMParser();
-            const parsed = parser.parseFromString(logoMarkup, "image/svg+xml");
-            const groupNode = parsed.documentElement;
-            // Import into the current document and append
-            const imported = document.importNode(groupNode, true);
-            if (!clone.hasAttribute("xmlns:xlink")) {
-              clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
-            }
-            clone.appendChild(imported);
-            // Serialize clone
-            svgData = new XMLSerializer().serializeToString(clone);
-          } catch (err) {
-            console.warn(
-              "SVG export: DOM injection failed, falling back to string replacement",
-              err
-            );
-            svgData = svgData.replace("</svg>", `${logoMarkup}</svg>`);
+          console.log("SVG export: Injecting logo markup into SVG");
+          console.log("SVG export: SVG data length before:", svgData.length);
+          console.log("SVG export: Logo markup:", logoMarkup);
+          
+          // Use simple string replacement - more reliable
+          const beforeLength = svgData.length;
+          svgData = svgData.replace("</svg>", `${logoMarkup}</svg>`);
+          const afterLength = svgData.length;
+          
+          if (afterLength === beforeLength) {
+            console.error("SVG export: Logo was NOT injected - string replacement failed!");
+            console.log("SVG export: SVG data sample:", svgData.slice(-200));
+          } else {
+            console.log("SVG export: Logo injected successfully, added", afterLength - beforeLength, "characters");
           }
-          // Further log that the SVG data now contains image tag
-          if (!svgData.includes("<image")) {
-            console.warn(
-              "SVG export: logo markup injected but no <image> tag found in serialized SVG (possible conversion or browser issue)"
-            );
-          }
+        } else {
+          console.log("SVG export: No logo to inject (logoMarkup is empty)");
         }
 
+        console.log("SVG export: Creating blob and downloading");
         const svgBlob = new Blob([svgData], {
           type: "image/svg+xml;charset=utf-8",
         });
@@ -733,34 +754,49 @@ export default function Home() {
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(downloadUrl);
-
+        
+        console.log("SVG export: Download completed successfully");
         return; // SVG done, no PNG logic
       }
 
-      // ---------------- PNG (html2canvas) – already working ----------------
+      // ---------------- PNG (html2canvas Method) ----------------
       const previewNode = qrPreviewRef.current;
       if (!previewNode) {
         setError("QR preview not ready");
         return;
       }
 
+      console.log("PNG export: Using html2canvas to capture complete QR with logo");
+      
       const canvas = await html2canvas(previewNode, {
         backgroundColor: null,
         scale: 4,
         useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: previewNode.offsetWidth,
+        height: previewNode.offsetHeight,
       });
 
+      // Download the PNG
       const link = document.createElement("a");
       link.download = `qrcode.png`;
       link.href = canvas.toDataURL("image/png");
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      
+      console.log("PNG export: Download completed successfully");
     } catch (err) {
+      console.error("=== QR DOWNLOAD ERROR ===");
       console.error("Error:", err);
-      setError("Failed to process QR code");
+      console.error("Format:", format);
+      console.error("Has logoImage:", !!logoImage);
+      console.error("Has logoPreset:", !!logoPreset && logoPreset !== "none");
+      setError("Failed to process QR code: " + (err instanceof Error ? err.message : "Unknown error"));
     } finally {
       setIsLoading(false);
+      console.log("=== QR DOWNLOAD FINISHED ===");
     }
   };
 
@@ -1325,7 +1361,7 @@ export default function Home() {
           bgColor={bgColor}
           fgColor={fgColor}
           level="L" // lowest density
-          ref={qrRef as any}
+          ref={qrCallbackRef as any}
           style={{ width: QR_PIXEL_SIZE, height: QR_PIXEL_SIZE }}
           viewBox={`0 0 ${QR_PIXEL_SIZE} ${QR_PIXEL_SIZE}`}
           className={
@@ -1395,6 +1431,23 @@ export default function Home() {
     }
   };
 
+  // Simple download function without save/redirect
+  const handleDirectDownload = async (format: "png" | "svg") => {
+    if (!text) {
+      setError("Please enter content first");
+      return;
+    }
+
+    try {
+      setError("");
+      await downloadQR(format);
+      console.log(`Direct ${format.toUpperCase()} download completed`);
+    } catch (error) {
+      console.error("Direct download error:", error);
+      setError("Failed to download QR code: " + (error instanceof Error ? error.message : "Unknown error"));
+    }
+  };
+
   const handleDownloadAndNext = async (format: "png" | "svg") => {
     if (planLoading) {
       setError("Loading plan details...");
@@ -1445,7 +1498,8 @@ export default function Home() {
 
       await downloadQR(format);
 
-      router.push("/dashboard/active");
+      // Don't redirect automatically - let user stay on the page
+      console.log("Download completed successfully");
     } catch (error) {
       console.error("Error:", error);
       setError("Failed to process QR code");
@@ -1820,12 +1874,8 @@ export default function Home() {
                       <div className="absolute left-1/2 top-full mt-3 -translate-x-1/2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-40 text-left">
                         <button
                           onClick={() => {
-                            if (!user) {
-                              setShowAuthModal(true);
-                              return;
-                            }
                             setShowDownloadMenu(false);
-                            handleDownloadAndNext("png");
+                            handleDirectDownload("png");
                           }}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50"
                         >
@@ -1841,12 +1891,8 @@ export default function Home() {
 
                         <button
                           onClick={() => {
-                            if (!user) {
-                              setShowAuthModal(true);
-                              return;
-                            }
                             setShowDownloadMenu(false);
-                            handleDownloadAndNext("svg");
+                            handleDirectDownload("svg");
                           }}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50"
                         >

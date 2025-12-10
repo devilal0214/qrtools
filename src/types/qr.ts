@@ -37,5 +37,7 @@ export interface QRCode {
     fgColor?: string;
     bgColor?: string;
     shape?: string;
+    logoImage?: string | null;
+    logoPreset?: string | null;
   };
 }

@@ -31,6 +31,8 @@ interface QRCode {
     fgColor?: string;
     bgColor?: string;
     shape?: string;
+    logoImage?: string | null;
+    logoPreset?: string | null;
   };
 }
 
@@ -38,6 +40,8 @@ const truncateTitle = (title: string, maxLength: number = 30) => {
   if (!title || title.length <= maxLength) return title;
   return `${title.substring(0, maxLength)}...`;
 };
+
+
 
 export default function ActiveCodes() {
   const [codes, setCodes] = useState<QRCode[]>([]);
