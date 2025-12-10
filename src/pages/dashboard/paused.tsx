@@ -23,7 +23,7 @@ interface QRCode {
   createdAt: string;
   scans: number;
   isActive: boolean;
-  title?: string;  // Add title to interface
+  title?: string;
   settings?: {
     size?: number;
     fgColor?: string;
@@ -32,6 +32,9 @@ interface QRCode {
     logoImage?: string | null;
     logoPreset?: string | null;
   };
+  // ✅ Needed for trash logic
+  isDeleted?: boolean;
+  deletedAt?: string;
 }
 
 const truncateTitle = (title: string, maxLength: number = 30) => {
@@ -146,7 +149,7 @@ export default function PausedCodes() {
         updatedAt: new Date().toISOString(),
       });
 
-      // Trigger trash tab animation (DashboardLayout listens for this)
+      // Notify layout to animate Trash tab
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("qr-moved-to-trash"));
       }
