@@ -22,8 +22,19 @@ interface QRData {
     fgColor?: string;
     bgColor?: string;
     shape?: string;
+    logoImage?: string | null;
+    logoPreset?: string | null;
   };
 }
+
+// Logo presets meta for UI
+const LOGO_PRESETS_META: Record<string, { color: string; label: string }> = {
+  none: { color: "#E5E7EB", label: "None" },
+  whatsapp: { color: "#25D366", label: "WA" },
+  link: { color: "#6366F1", label: "Link" },
+  location: { color: "#F97373", label: "Loc" },
+  wifi: { color: "#14B8A6", label: "WiFi" },
+};
 
 export default function QRCodeViewer() {
   const router = useRouter();
@@ -171,24 +182,48 @@ export default function QRCodeViewer() {
                 </button>
               )}
 
-              <QRCode
-                value={contents[currentIndex]}
-                size={qrData.settings?.size || 180}
-                bgColor={qrData.settings?.bgColor || "#FFFFFF"}
-                fgColor={qrData.settings?.fgColor || "#000000"}
-                level="L"
-                style={{
-                  width: qrData.settings?.size || 180,
-                  height: qrData.settings?.size || 180,
-                }}
-                viewBox={`0 0 ${qrData.settings?.size || 180} ${
-                  qrData.settings?.size || 180
-                }`}
-                className={`
-                  ${qrData.settings?.shape === "rounded" ? "rounded-2xl" : ""}
-                  ${qrData.settings?.shape === "dots" ? "rounded-3xl" : ""}
-                `}
-              />
+              <div className="relative inline-block">
+                <QRCode
+                  value={contents[currentIndex]}
+                  size={qrData.settings?.size || 180}
+                  bgColor={qrData.settings?.bgColor || "#FFFFFF"}
+                  fgColor={qrData.settings?.fgColor || "#000000"}
+                  level="L"
+                  style={{
+                    width: qrData.settings?.size || 180,
+                    height: qrData.settings?.size || 180,
+                  }}
+                  viewBox={`0 0 ${qrData.settings?.size || 180} ${
+                    qrData.settings?.size || 180
+                  }`}
+                  className={`
+                    ${qrData.settings?.shape === "rounded" ? "rounded-2xl" : ""}
+                    ${qrData.settings?.shape === "dots" ? "rounded-3xl" : ""}
+                  `}
+                />
+                {(qrData.settings?.logoImage || (qrData.settings?.logoPreset && qrData.settings.logoPreset !== "none")) && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center overflow-hidden shadow-md">
+                      {qrData.settings.logoImage ? (
+                        <img
+                          src={qrData.settings.logoImage}
+                          alt="logo"
+                          className="w-8 h-8 object-contain"
+                        />
+                      ) : (
+                        qrData.settings.logoPreset && qrData.settings.logoPreset !== "none" && (
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                            style={{ backgroundColor: LOGO_PRESETS_META[qrData.settings.logoPreset]?.color || "#E5E7EB" }}
+                          >
+                            {LOGO_PRESETS_META[qrData.settings.logoPreset]?.label || ""}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {contents.length > 1 && currentIndex < contents.length - 1 && (
                 <button
