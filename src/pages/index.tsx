@@ -599,20 +599,271 @@ export default function Home() {
       const t = setTimeout(() => setIsLoading(false), 400);
       return () => clearTimeout(t);
     }
-  }, [
-    text,
-    size,
-    bgColor,
-    fgColor,
-    qrShape,
-    frameStyle,
-    logoImage,
-    logoPreset,
-  ]);
+  }, [text, size, bgColor, fgColor]);
 
-  /* -------------------------------------------------------------- */
-  /* socials input renderer                                         */
-  /* -------------------------------------------------------------- */
+  const generateContent = async () => {
+    if (contentType === ContentTypes.CONTACT) {
+      try {
+        const contactId = Math.random().toString(36).substr(2, 9);
+        const contactViewUrl = `${window.location.origin}/c/${contactId}`;
+
+        if (user) {
+          const contactData = {
+            ...contactInfo,
+            userId: user.uid,
+            createdAt: new Date().toISOString(),
+          };
+
+          await setDoc(doc(db, "contacts", contactId), contactData);
+        }
+
+        return {
+          type: contentType.toUpperCase(),
+          content: contactViewUrl,
+        };
+      } catch (error) {
+        console.error("Error saving contact:", error);
+        setError("Failed to save contact data");
+        return null;
+      }
+    }
+
+    return {
+      type: contentType.toUpperCase(),
+      content: text,
+    };
+  };
+
+  // Save or update QR doc, and ensure we have a stable nanoId
+  const saveQRCode = async () => {
+    if (!user) {
+      setError("Please sign in to save QR codes");
+      return null;
+    }
+
+    if (!text) {
+      setError("Please enter some content first");
+      return null;
+    }
+
+    try {
+      // If an SVG logo was uploaded, convert it to PNG and upload it so saved
+      // QR docs only store PNG logo URLs (better cross-platform and embeddable)
+      let logoToSave = logoImage;
+      if (logoImage) {
+        try {
+          const converted = await convertLogoToPngDataUrl(logoImage, 256);
+          const dataUrl = converted || logoImage;
+          // If data url (base64 PNG), create File and upload
+          if (dataUrl && dataUrl.startsWith("data:image/png")) {
+            const file = dataUrlToFile(dataUrl, "logo.png");
+            const uploadedUrl = await uploadFile(file, { folder: "logos" });
+            logoToSave = uploadedUrl;
+          }
+        } catch (err) {
+          console.warn("Logo conversion/upload failed during save:", err);
+          // fall back to storing original url if conversion/upload fails
+          logoToSave = logoImage;
+        }
+      }
+      setIsLoading(true);
+
+      const qrData = {
+        userId: user.uid,
+        title,
+        type: contentType.toUpperCase(),
+        content: text,
+        createdAt: new Date().toISOString(),
+        scans: 0,
+        isActive: true,
+        settings: {
+          size,
+          fgColor,
+          bgColor,
+          shape: style.shape,
+          logoImage: logoToSave || null,
+          logoPreset: logoPreset || null,
+        },
+      };
+
+      let finalId = nanoId;
+
+      if (finalId) {
+        // If we already created this QR earlier, just update the same doc
+        const ref = doc(db, "qrcodes", finalId);
+        await setDoc(ref, qrData, { merge: true });
+      } else {
+        // Create a new nanoId + doc
+        while (true) {
+          const candidate = generateNanoCode(); // e.g. 6-char ID
+          const ref = doc(db, "qrcodes", candidate);
+          const snap = await getDoc(ref);
+
+          if (!snap.exists()) {
+            await setDoc(ref, qrData);
+            finalId = candidate;
+            setNanoId(candidate); // store nanoId for preview + download
+            break;
+          }
+        }
+      }
+
+      return finalId;
+    } catch (error: any) {
+      console.error("Error saving QR code:", error);
+      setError("Failed to save QR code: " + (error.message || "Unknown error"));
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Helper: add logo into cloned SVG for SVG export
+  // ---- Helper: get logo markup string ----
+  const getLogoMarkup = (
+    logoImage: string | null,
+    logoPreset: string | null,
+    svgSize = 256
+  ) => {
+    if (!logoImage && (!logoPreset || logoPreset === "none")) return "";
+
+    const size = svgSize;
+    // Scale logo size proportionally to viewBox (logo should be ~20% of QR size for better scanability)
+    const logoScale = size / 256; // If size is 25, scale is 0.0977
+    const logoSize = 60 * logoScale; // Reduced from 80 to 60
+    const circleRadius = 33 * logoScale; // Reduced from 44 to 33
+    let content = "";
+
+    if (logoImage) {
+      // Use both xlink:href and href for maximum compatibility
+      content = `
+        <image
+          width="${logoSize}"
+          height="${logoSize}"
+          x="${-logoSize / 2}"
+          y="${-logoSize / 2}"
+          xlink:href="${logoImage}"
+          href="${logoImage}"
+        />
+      `;
+    } else if (logoPreset && logoPreset !== "none") {
+      const meta = LOGO_PRESETS_META[logoPreset];
+      const presetRadius = 30 * logoScale;
+      const fontSize = 18 * logoScale;
+      content = `
+        <circle cx="0" cy="0" r="${presetRadius}" fill="${meta.color}" />
+        <text
+          fill="white"
+          font-size="${fontSize}"
+          font-family="Arial"
+          text-anchor="middle"
+          alignment-baseline="central"
+        >${meta.label}</text>
+      `;
+    }
+
+    return `
+      <g transform="translate(${size / 2}, ${size / 2})">
+        <circle cx="0" cy="0" r="${circleRadius}" fill="white" />
+        ${content}
+      </g>
+    `;
+  };
+
+  // ---- Main download function: PNG + SVG ----
+  const downloadQR = async (format: "png" | "svg") => {
+    if (!qrRef.current) {
+      setError("QR code not ready");
+      return;
+    }
+
+    console.log("=== QR DOWNLOAD STARTED ===");
+    console.log("Format:", format);
+    console.log("Has logoImage:", !!logoImage);
+    console.log("LogoImage value:", logoImage?.slice(0, 100));
+    console.log("Has logoPreset:", !!logoPreset && logoPreset !== "none");
+    console.log("LogoPreset value:", logoPreset);
+
+    setIsLoading(true);
+    setError("");
+
+    try {
+      // For both PNG and SVG, use html2canvas to capture the styled preview
+      const previewNode = qrPreviewRef.current;
+      if (!previewNode) {
+        setError("QR preview not ready");
+        return;
+      }
+
+      console.log(`${format.toUpperCase()} export: Using html2canvas to capture complete QR with styling`);
+      
+      const canvas = await html2canvas(previewNode, {
+        backgroundColor: null,
+        scale: 4,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: previewNode.offsetWidth,
+        height: previewNode.offsetHeight,
+      });
+
+      if (format === "svg") {
+        // Convert canvas to SVG by embedding the PNG as a base64 image
+        const pngDataUrl = canvas.toDataURL("image/png");
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <image width="${width}" height="${height}" xlink:href="${pngDataUrl}"/>
+</svg>`;
+
+        const svgBlob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
+        const downloadUrl = URL.createObjectURL(svgBlob);
+
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = `qrcode.svg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(downloadUrl);
+        
+        console.log("SVG export: Download completed successfully");
+        return;
+      }
+
+      // ---------------- PNG Download ----------------
+      const link = document.createElement("a");
+      link.download = `qrcode.png`;
+      link.href = canvas.toDataURL("image/png");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log("PNG export: Download completed successfully");
+    } catch (err) {
+      console.error("=== QR DOWNLOAD ERROR ===");
+      console.error("Error:", err);
+      console.error("Format:", format);
+      console.error("Has logoImage:", !!logoImage);
+      console.error("Has logoPreset:", !!logoPreset && logoPreset !== "none");
+      setError("Failed to process QR code: " + (err instanceof Error ? err.message : "Unknown error"));
+    } finally {
+      setIsLoading(false);
+      console.log("=== QR DOWNLOAD FINISHED ===");
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    try {
+      const fileUrl = await uploadFile(file);
+      setFileUrl(fileUrl);
+      setText(fileUrl);
+    } catch (error: any) {
+      setError(error.message);
+    }
+  };
 
   const scrollSocials = (direction: "left" | "right") => {
     if (!socialContainerRef.current) return;
@@ -1341,14 +1592,36 @@ export default function Home() {
       setError("Please enter content first");
       return;
     }
+
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+
     try {
       setError("");
+      
+      // Save QR code first for analytics
+      const id = await saveQRCode();
+      if (!id) {
+        setError("Failed to save QR code");
+        return;
+      }
+
+      const origin = typeof window !== "undefined" ? window.location.origin : getBaseUrl();
+      const shortUrl = `${origin}/qr/${id}`;
+
+      // Force QR to use the short URL for tracking and analytics
+      setExportValue(shortUrl);
+      await new Promise((res) => setTimeout(res, 50)); // allow QR to re-render
+
       await downloadQR(format);
-    } catch (error: any) {
-      setError(
-        "Failed to download QR code: " +
-          (error instanceof Error ? error.message : "Unknown error")
-      );
+      console.log(`Direct ${format.toUpperCase()} download completed`);
+    } catch (error) {
+      console.error("Direct download error:", error);
+      setError("Failed to download QR code: " + (error instanceof Error ? error.message : "Unknown error"));
+    } finally {
+      setExportValue(null);
     }
   };
 
