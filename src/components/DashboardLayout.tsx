@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { auth } from "@/lib/firebase";
@@ -12,27 +12,8 @@ export default function DashboardLayout({
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [trashPing, setTrashPing] = useState(false);
   const router = useRouter();
   const { canUseFeature } = usePlanFeatures();
-
-  // Listen for global "qr-moved-to-trash" event and animate Trash Bin tab
-  useEffect(() => {
-    const handleTrashEvent = () => {
-      setTrashPing(true);
-      setTimeout(() => setTrashPing(false), 1500);
-    };
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("qr-moved-to-trash", handleTrashEvent);
-    }
-
-    return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("qr-moved-to-trash", handleTrashEvent);
-      }
-    };
-  }, []);
 
   const menuItems = [
     {
@@ -109,7 +90,7 @@ export default function DashboardLayout({
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth={2}
-            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a 2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a 2 2 0 012 2v10m-6 0a2 2 0 002 2h2a 2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
           />
         </svg>
       ),
@@ -175,6 +156,7 @@ export default function DashboardLayout({
       ),
       requiresFeature: "virtualTour",
     },
+    // 👇 NEW TRASH BIN ITEM
     {
       href: "/dashboard/trash",
       label: "Trash Bin",
@@ -189,7 +171,7 @@ export default function DashboardLayout({
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth={2}
-            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0V5a2 2 0 012-2h2a2 2 0 012 2v2"
+            d="M9 3h6m-7 4h8m-9 0l1 12a2 2 0 002 2h4a2 2 0 002-2l1-12"
           />
         </svg>
       ),
@@ -238,9 +220,6 @@ export default function DashboardLayout({
           <nav className="flex-1 overflow-y-auto p-4">
             <ul className="space-y-1">
               {menuItems.map((item) => {
-                const isActive = router.pathname === item.href;
-                const isTrashItem = item.href === "/dashboard/trash";
-
                 if (
                   item.showAlways ||
                   (item.requiresFeature && canUseFeature(item.requiresFeature))
@@ -250,21 +229,12 @@ export default function DashboardLayout({
                       <Link
                         href={item.href}
                         className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                          isActive
+                          router.pathname === item.href
                             ? "bg-blue-50 text-blue-600"
                             : "text-gray-600 hover:bg-gray-50"
-                        } ${
-                          isTrashItem && trashPing
-                            ? "animate-bounce ring-2 ring-red-200 ring-offset-1"
-                            : ""
                         }`}
                       >
-                        <div className="relative">
-                          {item.icon}
-                          {isTrashItem && trashPing && (
-                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />
-                          )}
-                        </div>
+                        {item.icon}
                         <span>{item.label}</span>
                       </Link>
                     </li>
