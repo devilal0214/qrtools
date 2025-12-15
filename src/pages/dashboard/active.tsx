@@ -1,12 +1,16 @@
-import { useState, useEffect } from "react";
-import DashboardLayout from "@/components/DashboardLayout";
+/* eslint-disable @next/next/no-img-element */
+import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
-import { useAuth } from "@/hooks/useAuth";
-import Link from "next/link";
+import { useRouter } from "next/router";
+
+import DashboardLayout from "@/components/DashboardLayout";
 import AuthGuard from "@/components/AuthGuard";
+import { useAuth } from "@/hooks/useAuth";
+
 import EditQRModal from "@/components/EditQRModal";
 import ViewQRModal from "@/components/ViewQRModal";
 import ScanAnalyticsModal from "@/components/ScanAnalyticsModal";
+
 import {
   collection,
   query,
@@ -14,10 +18,23 @@ import {
   getDocs,
   doc,
   updateDoc,
+  addDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
 import { EyeIcon, PencilIcon, PauseIcon } from "@heroicons/react/24/outline";
- 
+import { QRCodeSVG } from "qrcode.react";
+
+// @ts-ignore – qr-code-styling has no official TS types in many setups
+import QRCodeStyling from "qr-code-styling";
+
+// ✅ For downloading the FULL FRAME (not just QR)
+import { toPng, toSvg } from "html-to-image";
+
+type SortField = "title" | "type" | "createdAt" | "scans";
+type FrameStyle = "none" | "soft-card" | "dark-badge" | "outline-tag";
+type PatternStyle = "classic" | "rounded" | "thin" | "smooth" | "circles";
+
 interface QRCode {
   id: string;
   type: string;
@@ -26,13 +43,16 @@ interface QRCode {
   scans: number;
   isActive: boolean;
   title?: string;
+  mode?: "static" | "dynamic";
   settings?: {
     size?: number;
     fgColor?: string;
     bgColor?: string;
     shape?: string;
-    logoImage?: string | null;
+    logoImage?: string | null; // dataURL
     logoPreset?: string | null;
+    patternStyle?: PatternStyle;
+    frameStyle?: FrameStyle;
   };
 }
 
@@ -41,33 +61,240 @@ const truncateTitle = (title: string, maxLength: number = 30) => {
   return `${title.substring(0, maxLength)}...`;
 };
 
+const truncateContent = (content: string, maxLength: number = 40) => {
+  if (content.length <= maxLength) return content;
+  return content.substring(0, maxLength) + "...";
+};
 
+/* ---------------- preset logo SVG → data URL (qr-code-styling image) ---------------- */
+const svgToDataUrl = (svg: string) => {
+  if (typeof window === "undefined") return undefined;
+  const base64 = window.btoa(unescape(encodeURIComponent(svg)));
+  return `data:image/svg+xml;base64,${base64}`;
+};
+
+const getLogoPresetDataUrl = (preset: string | null, fg: string) => {
+  if (!preset) return undefined;
+
+  if (preset === "scan-me") {
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">
+        <rect x="0" y="0" width="160" height="160" rx="24" fill="white"/>
+        <rect x="0.5" y="0.5" width="159" height="159" rx="24" fill="white" stroke="#E5E7EB"/>
+        <text x="80" y="90" text-anchor="middle" font-family="Arial, sans-serif"
+              font-size="28" font-weight="700" fill="${fg}">SCAN</text>
+        <text x="80" y="120" text-anchor="middle" font-family="Arial, sans-serif"
+              font-size="28" font-weight="700" fill="${fg}">ME</text>
+      </svg>
+    `;
+    return svgToDataUrl(svg);
+  }
+
+  if (preset === "camera") {
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">
+        <rect x="0" y="0" width="160" height="160" rx="80" fill="white"/>
+        <rect x="0.5" y="0.5" width="159" height="159" rx="80" fill="white" stroke="#E5E7EB"/>
+        <g transform="translate(38,52)">
+          <rect x="0" y="10" width="84" height="56" rx="12" fill="${fg}"/>
+          <rect x="14" y="0" width="20" height="16" rx="6" fill="${fg}"/>
+          <circle cx="50" cy="38" r="16" fill="white"/>
+          <circle cx="50" cy="38" r="10" fill="${fg}"/>
+          <circle cx="72" cy="24" r="4" fill="white"/>
+        </g>
+      </svg>
+    `;
+    return svgToDataUrl(svg);
+  }
+
+  return undefined;
+};
+
+/* ---------------- Upload PNG/SVG → dataURL ---------------- */
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    if (
+      file.type === "image/svg+xml" ||
+      file.name.toLowerCase().endsWith(".svg")
+    ) {
+      const textReader = new FileReader();
+      textReader.onload = () => {
+        try {
+          const svgText = textReader.result as string;
+          const url = svgToDataUrl(svgText);
+          if (!url) return reject(new Error("Failed to convert SVG"));
+          resolve(url);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      textReader.onerror = reject;
+      textReader.readAsText(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+const downloadDataUrl = (dataUrl: string, filename: string) => {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+};
+
+const downloadSvgString = (svgString: string, filename: string) => {
+  const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 export default function ActiveCodes() {
+  const router = useRouter();
+  const { user } = useAuth();
+
+  // ---------- LIST STATE ----------
   const [codes, setCodes] = useState<QRCode[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+
   const [selectedQR, setSelectedQR] = useState<QRCode | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedViewQR, setSelectedViewQR] = useState<QRCode | null>(null);
 
-  // NEW: analytics modal state
+  const [selectedViewQR, setSelectedViewQR] = useState<QRCode | null>(null);
   const [selectedAnalyticsQR, setSelectedAnalyticsQR] = useState<QRCode | null>(
     null
   );
 
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortField, setSortField] = useState<
-    "title" | "type" | "createdAt" | "scans"
-  >("createdAt");
+  const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const itemsPerPage = 5;
 
+  // ---------- WIZARD STATE ----------
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [selectedType, setSelectedType] = useState<string>("URL");
+  const [qrTitle, setQrTitle] = useState<string>("");
+
+  // URL
+  const [urlValue, setUrlValue] = useState<string>("");
+
+  // Plain Text
+  const [plainTextValue, setPlainTextValue] = useState<string>("");
+
+  // Email
+  const [emailAddress, setEmailAddress] = useState<string>("");
+  const [emailSubject, setEmailSubject] = useState<string>("");
+  const [emailBody, setEmailBody] = useState<string>("");
+
+  // SMS
+  const [smsNumber, setSmsNumber] = useState<string>("");
+  const [smsMessage, setSmsMessage] = useState<string>("");
+
+  // Location
+  const [locationLat, setLocationLat] = useState<string>("");
+  const [locationLng, setLocationLng] = useState<string>("");
+  const [locationAddress, setLocationAddress] = useState<string>("");
+
+  // Contact (vCard)
+  const [contactName, setContactName] = useState<string>("");
+  const [contactPhone, setContactPhone] = useState<string>("");
+  const [contactEmail, setContactEmail] = useState<string>("");
+  const [contactCompany, setContactCompany] = useState<string>("");
+  const [contactNote, setContactNote] = useState<string>("");
+
+  // Socials
+  const [socialMainUrl, setSocialMainUrl] = useState<string>("");
+  const [socialInstagram, setSocialInstagram] = useState<string>("");
+  const [socialFacebook, setSocialFacebook] = useState<string>("");
+  const [socialX, setSocialX] = useState<string>("");
+  const [socialLinkedIn, setSocialLinkedIn] = useState<string>("");
+
+  // App
+  const [appUniversalLink, setAppUniversalLink] = useState<string>("");
+  const [appIosUrl, setAppIosUrl] = useState<string>("");
+  const [appAndroidUrl, setAppAndroidUrl] = useState<string>("");
+  const [appWebUrl, setAppWebUrl] = useState<string>("");
+
+  // PDF
+  const [pdfUrl, setPdfUrl] = useState<string>("");
+
+  // File
+  const [fileUrl, setFileUrl] = useState<string>("");
+
+  // Multi-URL
+  const [multiUrl1, setMultiUrl1] = useState<string>("");
+  const [multiUrl2, setMultiUrl2] = useState<string>("");
+  const [multiUrl3, setMultiUrl3] = useState<string>("");
+  const [multiUrl4, setMultiUrl4] = useState<string>("");
+
+  // Mode + design
+  const [mode, setMode] = useState<"static" | "dynamic">("dynamic");
+  const [fgColor, setFgColor] = useState<string>("#000000");
+  const [bgColor, setBgColor] = useState<string>("#ffffff");
+  const [size, setSize] = useState<number>(256);
+
+  const [logoPreset, setLogoPreset] = useState<string | null>(null);
+  const [frameStyle, setFrameStyle] = useState<FrameStyle>("none");
+  const [patternStyle, setPatternStyle] = useState<PatternStyle>("classic");
+
+  // ✅ UPLOADED LOGO
+  const [uploadedLogoDataUrl, setUploadedLogoDataUrl] = useState<string | null>(
+    null
+  );
+  const [uploadedLogoName, setUploadedLogoName] = useState<string>("");
+
+  // ✅ DOWNLOAD FORMAT
+  const [downloadFormat, setDownloadFormat] = useState<"png" | "svg">("png");
+
+  // for styled preview + download
+  const qrWrapperRef = useRef<HTMLDivElement | null>(null);
+  const qrCodeInstanceRef = useRef<any>(null);
+
+  // ✅ Frame container ref (THIS is what we export for download)
+  const frameExportRef = useRef<HTMLDivElement | null>(null);
+
+  const handleLogoUpload = async (file: File | null) => {
+    if (!file) return;
+
+    const isPng =
+      file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+    const isSvg =
+      file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+
+    if (!isPng && !isSvg) {
+      alert("Please upload only PNG or SVG.");
+      return;
+    }
+
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setUploadedLogoDataUrl(dataUrl);
+      setUploadedLogoName(file.name);
+
+      // If upload logo, remove presets
+      setLogoPreset(null);
+    } catch (e) {
+      console.error(e);
+      alert("Logo upload failed. Try another file.");
+    }
+  };
+
+  // ---------- FETCH ACTIVE CODES ----------
   useEffect(() => {
     const fetchQRCodes = async () => {
       if (!user) return;
-
       setLoading(true);
       try {
         const q = query(
@@ -77,9 +304,9 @@ export default function ActiveCodes() {
         );
 
         const querySnapshot = await getDocs(q);
-        const fetchedCodes = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
+        const fetchedCodes = querySnapshot.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<QRCode, "id">),
         })) as QRCode[];
 
         setCodes(fetchedCodes);
@@ -93,6 +320,7 @@ export default function ActiveCodes() {
     fetchQRCodes();
   }, [user]);
 
+  // ---------- LIST HANDLERS ----------
   const handleEditClick = (qrCode: QRCode) => {
     setSelectedQR(qrCode);
     setShowEditModal(true);
@@ -107,6 +335,7 @@ export default function ActiveCodes() {
         type: updatedQR.type,
         content: updatedQR.content,
         settings: updatedQR.settings,
+        mode: updatedQR.mode || "dynamic",
         updatedAt: new Date().toISOString(),
       });
 
@@ -140,11 +369,416 @@ export default function ActiveCodes() {
     }
   };
 
-  const truncateContent = (content: string, maxLength: number = 40) => {
-    if (content.length <= maxLength) return content;
-    return content.substring(0, maxLength) + "...";
+  // ---------- WIZARD LOGIC ----------
+  const canGoNextFromStep1 = () => {
+    switch (selectedType) {
+      case "URL":
+        return urlValue.trim().length > 0;
+      case "Plain Text":
+        return plainTextValue.trim().length > 0;
+      case "Email":
+        return emailAddress.trim().length > 0;
+      case "SMS":
+        return smsNumber.trim().length > 0;
+      case "Location":
+        return (
+          (locationLat.trim() && locationLng.trim()) ||
+          locationAddress.trim().length > 0
+        );
+      case "Contact":
+        return contactName.trim().length > 0 || contactPhone.trim().length > 0;
+      case "Socials":
+        return (
+          socialMainUrl.trim().length > 0 ||
+          socialInstagram.trim().length > 0 ||
+          socialFacebook.trim().length > 0 ||
+          socialX.trim().length > 0 ||
+          socialLinkedIn.trim().length > 0
+        );
+      case "App":
+        return (
+          appUniversalLink.trim().length > 0 ||
+          appIosUrl.trim().length > 0 ||
+          appAndroidUrl.trim().length > 0 ||
+          appWebUrl.trim().length > 0
+        );
+      case "PDF":
+        return pdfUrl.trim().length > 0;
+      case "File":
+        return fileUrl.trim().length > 0;
+      case "Multi-URL":
+        return (
+          multiUrl1.trim().length > 0 ||
+          multiUrl2.trim().length > 0 ||
+          multiUrl3.trim().length > 0 ||
+          multiUrl4.trim().length > 0
+        );
+      default:
+        return false;
+    }
   };
 
+  const handleNextStep = () => {
+    if (wizardStep === 1) {
+      if (!canGoNextFromStep1()) return;
+      setWizardStep(2);
+    } else if (wizardStep === 2) {
+      setWizardStep(3);
+    }
+  };
+
+  const handlePrevStep = () => {
+    if (wizardStep === 2) setWizardStep(1);
+    if (wizardStep === 3) setWizardStep(2);
+  };
+
+  const getContentForType = (): string => {
+    if (selectedType === "URL") return urlValue.trim();
+
+    if (selectedType === "Plain Text") return plainTextValue.trim();
+
+    if (selectedType === "Email") {
+      const address = emailAddress.trim();
+      const subject = encodeURIComponent(emailSubject.trim());
+      const body = encodeURIComponent(emailBody.trim());
+      if (!address) return "";
+      let mailto = `mailto:${address}`;
+      const params: string[] = [];
+      if (subject) params.push(`subject=${subject}`);
+      if (body) params.push(`body=${body}`);
+      if (params.length) mailto += `?${params.join("&")}`;
+      return mailto;
+    }
+
+    if (selectedType === "SMS") {
+      const num = smsNumber.trim();
+      const msg = encodeURIComponent(smsMessage.trim());
+      if (!num) return "";
+      let sms = `sms:${num}`;
+      if (msg) sms += `?body=${msg}`;
+      return sms;
+    }
+
+    if (selectedType === "Location") {
+      const lat = locationLat.trim();
+      const lng = locationLng.trim();
+      const addr = locationAddress.trim();
+
+      if (lat && lng) {
+        return `geo:${lat},${lng}${
+          addr ? `?q=${encodeURIComponent(addr)}` : ""
+        }`;
+      }
+      if (addr) return `https://maps.google.com/?q=${encodeURIComponent(addr)}`;
+      return "";
+    }
+
+    if (selectedType === "Contact") {
+      const name = contactName.trim() || "Unnamed";
+      const phone = contactPhone.trim();
+      const email = contactEmail.trim();
+      const company = contactCompany.trim();
+      const note = contactNote.trim();
+
+      let vcard = "BEGIN:VCARD\nVERSION:3.0\n";
+      vcard += `FN:${name}\n`;
+      vcard += `N:${name};;;;\n`;
+      if (company) vcard += `ORG:${company}\n`;
+      if (phone) vcard += `TEL;TYPE=CELL:${phone}\n`;
+      if (email) vcard += `EMAIL;TYPE=INTERNET:${email}\n`;
+      if (note) vcard += `NOTE:${note}\n`;
+      vcard += "END:VCARD";
+      return vcard;
+    }
+
+    if (selectedType === "Socials") {
+      const lines: string[] = [];
+      if (socialMainUrl.trim()) lines.push(`Main: ${socialMainUrl.trim()}`);
+      if (socialInstagram.trim())
+        lines.push(`Instagram: ${socialInstagram.trim()}`);
+      if (socialFacebook.trim())
+        lines.push(`Facebook: ${socialFacebook.trim()}`);
+      if (socialX.trim()) lines.push(`X (Twitter): ${socialX.trim()}`);
+      if (socialLinkedIn.trim())
+        lines.push(`LinkedIn: ${socialLinkedIn.trim()}`);
+      return lines.join("\n");
+    }
+
+    if (selectedType === "App") {
+      const lines: string[] = [];
+      if (appUniversalLink.trim())
+        lines.push(`Universal: ${appUniversalLink.trim()}`);
+      if (appIosUrl.trim()) lines.push(`iOS: ${appIosUrl.trim()}`);
+      if (appAndroidUrl.trim()) lines.push(`Android: ${appAndroidUrl.trim()}`);
+      if (appWebUrl.trim()) lines.push(`Web: ${appWebUrl.trim()}`);
+      return lines.join("\n");
+    }
+
+    if (selectedType === "PDF") return pdfUrl.trim();
+    if (selectedType === "File") return fileUrl.trim();
+
+    if (selectedType === "Multi-URL") {
+      const urls = [
+        multiUrl1.trim(),
+        multiUrl2.trim(),
+        multiUrl3.trim(),
+        multiUrl4.trim(),
+      ].filter(Boolean);
+      return urls.join("\n");
+    }
+
+    return "";
+  };
+
+  const resetWizard = () => {
+    setWizardStep(1);
+    setSelectedType("URL");
+    setQrTitle("");
+
+    setUrlValue("");
+    setPlainTextValue("");
+    setEmailAddress("");
+    setEmailSubject("");
+    setEmailBody("");
+    setSmsNumber("");
+    setSmsMessage("");
+    setLocationLat("");
+    setLocationLng("");
+    setLocationAddress("");
+    setContactName("");
+    setContactPhone("");
+    setContactEmail("");
+    setContactCompany("");
+    setContactNote("");
+    setSocialMainUrl("");
+    setSocialInstagram("");
+    setSocialFacebook("");
+    setSocialX("");
+    setSocialLinkedIn("");
+    setAppUniversalLink("");
+    setAppIosUrl("");
+    setAppAndroidUrl("");
+    setAppWebUrl("");
+    setPdfUrl("");
+    setFileUrl("");
+    setMultiUrl1("");
+    setMultiUrl2("");
+    setMultiUrl3("");
+    setMultiUrl4("");
+
+    setMode("dynamic");
+    setFgColor("#000000");
+    setBgColor("#ffffff");
+    setSize(256);
+    setLogoPreset(null);
+    setFrameStyle("none");
+    setPatternStyle("classic");
+
+    setUploadedLogoDataUrl(null);
+    setUploadedLogoName("");
+
+    setDownloadFormat("png");
+  };
+
+  // ✅ Save function (NO auto-reset here)
+  const saveQRCodeToFirestore = async (): Promise<QRCode | null> => {
+    if (!user) {
+      alert("You must be logged in to create a QR code.");
+      return null;
+    }
+
+    const content = getContentForType();
+    if (!content) {
+      alert("Please fill in the required fields.");
+      return null;
+    }
+
+    try {
+      setLoading(true);
+      const now = new Date().toISOString();
+
+      const newDoc = await addDoc(collection(db, "qrcodes"), {
+        userId: user.uid,
+        title: qrTitle || `${selectedType} QR Code`,
+        type: selectedType,
+        content,
+        createdAt: now,
+        updatedAt: now,
+        scans: 0,
+        isActive: true,
+        mode,
+        settings: {
+          size,
+          fgColor,
+          bgColor,
+          shape: patternStyle,
+          logoPreset,
+          logoImage: uploadedLogoDataUrl || null,
+          frameStyle,
+          patternStyle,
+        },
+      });
+
+      const newQRCode: QRCode = {
+        id: newDoc.id,
+        title: qrTitle || `${selectedType} QR Code`,
+        type: selectedType,
+        content,
+        createdAt: now,
+        scans: 0,
+        isActive: true,
+        mode,
+        settings: {
+          size,
+          fgColor,
+          bgColor,
+          shape: patternStyle,
+          logoPreset,
+          logoImage: uploadedLogoDataUrl || null,
+          frameStyle,
+          patternStyle,
+        },
+      };
+
+      setCodes((prev) => [newQRCode, ...prev]);
+      return newQRCode;
+    } catch (error) {
+      console.error("Error creating QR code:", error);
+      alert("Could not create QR code. Please try again.");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ---------- QR-CODE-STYLING PREVIEW ----------
+  const qrData = getContentForType() || "https://example.com";
+
+  const buildDotsOptions = (pattern: PatternStyle, color: string) => {
+    switch (pattern) {
+      case "rounded":
+        return { color, type: "rounded" };
+      case "thin":
+        return { color, type: "extra-rounded" };
+      case "smooth":
+        return { color, type: "classy-rounded" };
+      case "circles":
+        return { color, type: "dots" };
+      case "classic":
+      default:
+        return { color, type: "square" };
+    }
+  };
+
+  const buildCornersSquareOptions = (pattern: PatternStyle, color: string) => {
+    switch (pattern) {
+      case "rounded":
+      case "smooth":
+        return { color, type: "extra-rounded" };
+      case "circles":
+        return { color, type: "rounded" };
+      case "thin":
+        return { color, type: "classy" };
+      case "classic":
+      default:
+        return { color, type: "square" };
+    }
+  };
+
+  useEffect(() => {
+    if (wizardStep === 1) return;
+    if (typeof window === "undefined") return;
+    if (!qrWrapperRef.current) return;
+
+    const presetImage = getLogoPresetDataUrl(logoPreset, fgColor);
+    const finalLogoImage = uploadedLogoDataUrl || presetImage;
+
+    const options: any = {
+      width: size,
+      height: size,
+      data: qrData,
+      backgroundOptions: { color: bgColor },
+      dotsOptions: buildDotsOptions(patternStyle, fgColor),
+      cornersSquareOptions: buildCornersSquareOptions(patternStyle, fgColor),
+      cornersDotOptions: { color: fgColor, type: "dots" },
+
+      image: finalLogoImage,
+      imageOptions: {
+        crossOrigin: "anonymous",
+        margin: finalLogoImage ? 6 : 0,
+        imageSize: finalLogoImage ? 0.28 : 0,
+        hideBackgroundDots: !!finalLogoImage,
+      },
+
+      margin: 0,
+    };
+
+    const QRStylingAny: any = QRCodeStyling;
+
+    if (!qrCodeInstanceRef.current) {
+      qrCodeInstanceRef.current = new QRStylingAny(options);
+    } else {
+      qrCodeInstanceRef.current.update(options);
+    }
+
+    qrWrapperRef.current.innerHTML = "";
+    qrCodeInstanceRef.current.append(qrWrapperRef.current);
+  }, [
+    wizardStep,
+    size,
+    fgColor,
+    bgColor,
+    patternStyle,
+    qrData,
+    logoPreset,
+    uploadedLogoDataUrl,
+  ]);
+
+  // ✅ Download = Auto Save + Download (WITH FRAME INCLUDED)
+  const handleDownload = async () => {
+    const saved = await saveQRCodeToFirestore();
+    if (!saved) return;
+
+    const name = qrTitle || `${selectedType}-qr`;
+
+    // If no frame selected, keep original qr-code-styling download
+    if (frameStyle === "none") {
+      if (!qrCodeInstanceRef.current) return;
+      qrCodeInstanceRef.current.download({
+        name,
+        extension: downloadFormat,
+      });
+      resetWizard();
+      return;
+    }
+
+    // ✅ Export full frame container (QR + footer + padding/background)
+    if (!frameExportRef.current) return;
+
+    try {
+      if (downloadFormat === "png") {
+        const dataUrl = await toPng(frameExportRef.current, {
+          cacheBust: true,
+          pixelRatio: 2,
+          backgroundColor: "#ffffff",
+        });
+        downloadDataUrl(dataUrl, `${name}.png`);
+      } else {
+        const svgString = await toSvg(frameExportRef.current, {
+          cacheBust: true,
+          backgroundColor: "#ffffff",
+        });
+        downloadSvgString(svgString, `${name}.svg`);
+      }
+
+      resetWizard();
+    } catch (e) {
+      console.error(e);
+      alert("Download failed. Please try again.");
+    }
+  };
+
+  // ---------- LIST DERIVED DATA ----------
   const filteredCodes = codes.filter(
     (code) =>
       code.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -154,16 +788,18 @@ export default function ActiveCodes() {
 
   const sortedCodes = [...filteredCodes].sort((a, b) => {
     if (sortField === "createdAt") {
-      return sortDirection === "asc"
-        ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      const aTime = new Date(a.createdAt).getTime();
+      const bTime = new Date(b.createdAt).getTime();
+      return sortDirection === "asc" ? aTime - bTime : bTime - aTime;
     }
     if (sortField === "scans") {
       return sortDirection === "asc" ? a.scans - b.scans : b.scans - a.scans;
     }
+    const aVal = (a[sortField] || "") as string;
+    const bVal = (b[sortField] || "") as string;
     return sortDirection === "asc"
-      ? (a[sortField] || "").localeCompare(b[sortField] || "")
-      : (b[sortField] || "").localeCompare(a[sortField] || "");
+      ? aVal.localeCompare(bVal)
+      : bVal.localeCompare(aVal);
   });
 
   const paginatedCodes = sortedCodes.slice(
@@ -173,7 +809,7 @@ export default function ActiveCodes() {
 
   const totalPages = Math.ceil(sortedCodes.length / itemsPerPage);
 
-  const handleSort = (field: typeof sortField) => {
+  const handleSort = (field: SortField) => {
     if (field === sortField) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
@@ -182,6 +818,1040 @@ export default function ActiveCodes() {
     }
   };
 
+  // ---------- WIZARD UI ----------
+  const renderStepNav = () => (
+    <div className="flex items-center justify-center gap-6 py-3 border-b bg-white rounded-t-xl">
+      {[
+        { step: 1, label: "Select QR Code type" },
+        { step: 2, label: "Customize QR Code" },
+        { step: 3, label: "Download QR Code" },
+      ].map(({ step, label }, index) => {
+        const isActive = wizardStep === step;
+        const isCompleted = wizardStep > step;
+
+        return (
+          <div key={index} className="flex items-center gap-2">
+            <div
+              className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-semibold ${
+                isActive
+                  ? "bg-emerald-500 text-white"
+                  : isCompleted
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-gray-200 text-gray-600"
+              }`}
+            >
+              {step}
+            </div>
+            <span
+              className={`text-sm ${
+                isActive ? "font-semibold text-gray-900" : "text-gray-600"
+              }`}
+            >
+              {label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // ---------- STEP 1 ----------
+  const renderStep1 = () => {
+    const typeOptions = [
+      { key: "URL", label: "URL" },
+      { key: "Plain Text", label: "Plain Text" },
+      { key: "Email", label: "Email" },
+      { key: "SMS", label: "SMS" },
+      { key: "Location", label: "Location" },
+      { key: "Contact", label: "Contact" },
+      { key: "Socials", label: "Socials" },
+      { key: "App", label: "App" },
+      { key: "PDF", label: "PDF" },
+      { key: "File", label: "File" },
+      { key: "Multi-URL", label: "Multi-URL" },
+    ];
+
+    return (
+      <div className="flex gap-6 p-6">
+        <div className="flex-1 space-y-4">
+          <div className="flex gap-2 flex-wrap">
+            {typeOptions.map(({ key, label }) => {
+              const isActive = selectedType === key;
+
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSelectedType(key)}
+                  className={`flex flex-col items-center justify-center w-24 h-16 rounded-lg border text-xs gap-1 transition ${
+                    isActive
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                      : "border-gray-200 hover:bg-gray-50 text-gray-700"
+                  }`}
+                >
+                  <span className="font-semibold">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* URL */}
+          {selectedType === "URL" && (
+            <div className="mt-4">
+              <p className="text-sm font-semibold text-gray-800 mb-2">
+                Redirect to an existing web URL
+              </p>
+              <label className="block text-xs text-gray-500 mb-1">
+                Enter URL
+              </label>
+              <input
+                type="text"
+                value={urlValue}
+                onChange={(e) => setUrlValue(e.target.value)}
+                placeholder="https://example.com"
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          )}
+
+          {/* Plain Text */}
+          {selectedType === "Plain Text" && (
+            <div className="mt-4">
+              <p className="text-sm font-semibold text-gray-800 mb-2">
+                Show a plain text message when scanned
+              </p>
+              <label className="block text-xs text-gray-500 mb-1">
+                Enter text
+              </label>
+              <textarea
+                value={plainTextValue}
+                onChange={(e) => setPlainTextValue(e.target.value)}
+                rows={4}
+                placeholder="Thank you for visiting our store!"
+                className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+              />
+            </div>
+          )}
+
+          {/* Email */}
+          {selectedType === "Email" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800 mb-1">
+                Create an email QR (mailto link)
+              </p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Email address
+                </label>
+                <input
+                  type="email"
+                  value={emailAddress}
+                  onChange={(e) => setEmailAddress(e.target.value)}
+                  placeholder="hello@yourbrand.com"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Subject (optional)
+                </label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  placeholder="Feedback from QR code"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Body (optional)
+                </label>
+                <textarea
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                  rows={3}
+                  placeholder="Hi, I scanned your QR code and..."
+                  className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* SMS */}
+          {selectedType === "SMS" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800 mb-1">
+                Send SMS when user scans
+              </p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Phone number
+                </label>
+                <input
+                  type="tel"
+                  value={smsNumber}
+                  onChange={(e) => setSmsNumber(e.target.value)}
+                  placeholder="+91XXXXXXXXXX"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Message (optional)
+                </label>
+                <textarea
+                  value={smsMessage}
+                  onChange={(e) => setSmsMessage(e.target.value)}
+                  rows={3}
+                  placeholder="Hi, I am interested in your services."
+                  className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Location */}
+          {selectedType === "Location" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800 mb-1">
+                Open a map location when scanned
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Latitude (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={locationLat}
+                    onChange={(e) => setLocationLat(e.target.value)}
+                    placeholder="28.6139"
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Longitude (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={locationLng}
+                    onChange={(e) => setLocationLng(e.target.value)}
+                    placeholder="77.2090"
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Address / Place name (optional but recommended)
+                </label>
+                <input
+                  type="text"
+                  value={locationAddress}
+                  onChange={(e) => setLocationAddress(e.target.value)}
+                  placeholder="Your store address or landmark"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <p className="text-[11px] text-gray-400">
+                Use either precise coordinates, address or both.
+              </p>
+            </div>
+          )}
+
+          {/* Contact */}
+          {selectedType === "Contact" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800 mb-1">
+                Save contact to phone
+              </p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Full name
+                </label>
+                <input
+                  type="text"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  placeholder="Your Name"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Phone
+                </label>
+                <input
+                  type="tel"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                  placeholder="+91XXXXXXXXXX"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Email (optional)
+                </label>
+                <input
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  placeholder="email@yourbrand.com"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Company (optional)
+                </label>
+                <input
+                  type="text"
+                  value={contactCompany}
+                  onChange={(e) => setContactCompany(e.target.value)}
+                  placeholder="Your Brand"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Note (optional)
+                </label>
+                <textarea
+                  value={contactNote}
+                  onChange={(e) => setContactNote(e.target.value)}
+                  rows={2}
+                  placeholder="Extra details for this contact"
+                  className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Socials */}
+          {selectedType === "Socials" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800 mb-1">
+                Bundle your social profiles
+              </p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Main link (Linktree / website)
+                </label>
+                <input
+                  type="text"
+                  value={socialMainUrl}
+                  onChange={(e) => setSocialMainUrl(e.target.value)}
+                  placeholder="https://yourlinktree.com/username"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Instagram
+                  </label>
+                  <input
+                    type="text"
+                    value={socialInstagram}
+                    onChange={(e) => setSocialInstagram(e.target.value)}
+                    placeholder="https://instagram.com/yourbrand"
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Facebook
+                  </label>
+                  <input
+                    type="text"
+                    value={socialFacebook}
+                    onChange={(e) => setSocialFacebook(e.target.value)}
+                    placeholder="https://facebook.com/yourbrand"
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    X (Twitter)
+                  </label>
+                  <input
+                    type="text"
+                    value={socialX}
+                    onChange={(e) => setSocialX(e.target.value)}
+                    placeholder="https://x.com/yourbrand"
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    LinkedIn
+                  </label>
+                  <input
+                    type="text"
+                    value={socialLinkedIn}
+                    onChange={(e) => setSocialLinkedIn(e.target.value)}
+                    placeholder="https://linkedin.com/company/yourbrand"
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* App */}
+          {selectedType === "App" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800 mb-1">
+                Link to your app
+              </p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Universal / Deep link (optional)
+                </label>
+                <input
+                  type="text"
+                  value={appUniversalLink}
+                  onChange={(e) => setAppUniversalLink(e.target.value)}
+                  placeholder="myapp://open"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    iOS App Store URL
+                  </label>
+                  <input
+                    type="text"
+                    value={appIosUrl}
+                    onChange={(e) => setAppIosUrl(e.target.value)}
+                    placeholder="https://apps.apple.com/..."
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Android Play Store URL
+                  </label>
+                  <input
+                    type="text"
+                    value={appAndroidUrl}
+                    onChange={(e) => setAppAndroidUrl(e.target.value)}
+                    placeholder="https://play.google.com/..."
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Web / landing URL (optional)
+                </label>
+                <input
+                  type="text"
+                  value={appWebUrl}
+                  onChange={(e) => setAppWebUrl(e.target.value)}
+                  placeholder="https://yourapp.com"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* PDF */}
+          {selectedType === "PDF" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800 mb-1">
+                Open a PDF file when scanned
+              </p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  PDF URL
+                </label>
+                <input
+                  type="text"
+                  value={pdfUrl}
+                  onChange={(e) => setPdfUrl(e.target.value)}
+                  placeholder="https://yourcdn.com/file.pdf"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <p className="text-[11px] text-gray-400">
+                Upload your PDF anywhere (Drive, S3, Firebase Storage) and paste
+                the public link here.
+              </p>
+            </div>
+          )}
+
+          {/* File */}
+          {selectedType === "File" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800 mb-1">
+                Link to any file (image, doc, zip, etc.)
+              </p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  File URL
+                </label>
+                <input
+                  type="text"
+                  value={fileUrl}
+                  onChange={(e) => setFileUrl(e.target.value)}
+                  placeholder="https://yourcdn.com/file.ext"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Multi-URL */}
+          {selectedType === "Multi-URL" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800 mb-1">
+                Multiple links in one QR (shows as text list)
+              </p>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={multiUrl1}
+                  onChange={(e) => setMultiUrl1(e.target.value)}
+                  placeholder="https://link1.com"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+                <input
+                  type="text"
+                  value={multiUrl2}
+                  onChange={(e) => setMultiUrl2(e.target.value)}
+                  placeholder="https://link2.com"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+                <input
+                  type="text"
+                  value={multiUrl3}
+                  onChange={(e) => setMultiUrl3(e.target.value)}
+                  placeholder="https://link3.com (optional)"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+                <input
+                  type="text"
+                  value={multiUrl4}
+                  onChange={(e) => setMultiUrl4(e.target.value)}
+                  placeholder="https://link4.com (optional)"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <p className="text-[11px] text-gray-400">
+                When scanned, users will see all links in a text popup.
+              </p>
+            </div>
+          )}
+
+          {/* Static / Dynamic toggle */}
+          <div className="mt-6 flex items-center gap-6 border-t pt-4">
+            <button
+              type="button"
+              onClick={() => setMode("static")}
+              className={`px-4 py-1.5 rounded-full text-sm border ${
+                mode === "static"
+                  ? "bg-gray-800 text-white border-gray-800"
+                  : "bg-white text-gray-700 border-gray-300"
+              }`}
+            >
+              Static
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("dynamic")}
+              className={`px-4 py-1.5 rounded-full text-sm border flex items-center gap-1 ${
+                mode === "dynamic"
+                  ? "bg-emerald-600 text-white border-emerald-600"
+                  : "bg-white text-gray-700 border-gray-300"
+              }`}
+            >
+              Dynamic
+            </button>
+          </div>
+        </div>
+
+        {/* Right: simple SVG preview + next */}
+        <div className="w-80 bg-gray-50 rounded-lg flex flex-col items-center justify-between py-6 px-4">
+          <div className="bg-white rounded-lg p-4 shadow-sm mb-4">
+            <QRCodeSVG
+              value={getContentForType() || "https://example.com"}
+              size={size}
+              fgColor={fgColor}
+              bgColor={bgColor}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleNextStep}
+            disabled={!canGoNextFromStep1()}
+            className="w-full bg-emerald-600 text-white text-sm font-semibold py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ---------- STEP 2 ----------
+  const renderStep2 = () => {
+    const frameOptions: { key: FrameStyle; label: string }[] = [
+      { key: "none", label: "None" },
+      { key: "soft-card", label: "Soft card" },
+      { key: "dark-badge", label: "Dark badge" },
+      { key: "outline-tag", label: "Outline tag" },
+    ];
+
+    const patternOptions: { key: PatternStyle; label: string }[] = [
+      { key: "classic", label: "Classic" },
+      { key: "rounded", label: "Rounded" },
+      { key: "thin", label: "Thin" },
+      { key: "smooth", label: "Smooth" },
+      { key: "circles", label: "Circles" },
+    ];
+
+    const frameClass =
+      frameStyle === "soft-card"
+        ? "p-4 bg-white rounded-3xl shadow-sm border border-gray-100"
+        : frameStyle === "dark-badge"
+        ? "p-5 bg-slate-900 rounded-3xl shadow-md"
+        : frameStyle === "outline-tag"
+        ? "p-4 bg-white rounded-3xl border-2 border-emerald-500"
+        : "p-0 bg-transparent";
+
+    const showFooter =
+      frameStyle === "dark-badge" || frameStyle === "outline-tag";
+
+    return (
+      <div className="flex gap-6 p-6">
+        {/* Left: design options */}
+        <div className="flex-1 space-y-6">
+          {/* COLORS */}
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold text-gray-800">
+              Design options
+            </h3>
+            <div className="grid grid-cols-3 gap-4 max-w-md">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">
+                  Background
+                </label>
+                <input
+                  type="color"
+                  value={bgColor}
+                  onChange={(e) => setBgColor(e.target.value)}
+                  className="w-full h-9 cursor-pointer rounded border border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">
+                  Squares
+                </label>
+                <input
+                  type="color"
+                  value={fgColor}
+                  onChange={(e) => setFgColor(e.target.value)}
+                  className="w-full h-9 cursor-pointer rounded border border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">
+                  Size (px)
+                </label>
+                <input
+                  type="number"
+                  min={128}
+                  max={768}
+                  value={size}
+                  onChange={(e) => setSize(Number(e.target.value) || 256)}
+                  className="w-full border rounded px-2 py-1 text-sm"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* LOGO PRESETS + UPLOAD */}
+          <section className="space-y-2">
+            <h4 className="text-xs font-semibold text-gray-700">
+              Logo{" "}
+              <span className="text-[10px] text-gray-400">
+                (PNG / SVG upload)
+              </span>
+            </h4>
+
+            <div className="flex gap-3 flex-wrap items-center">
+              {/* Upload */}
+              <label className="flex flex-col items-center justify-center w-20 h-16 rounded-lg border border-dashed border-gray-300 text-[11px] text-gray-700 bg-gray-50 cursor-pointer hover:bg-gray-100">
+                <span className="text-lg mb-1">⬆️</span>
+                <span>Upload</span>
+                <input
+                  type="file"
+                  accept=".png,.svg,image/png,image/svg+xml"
+                  className="hidden"
+                  onChange={(e) =>
+                    handleLogoUpload(e.target.files?.[0] || null)
+                  }
+                />
+              </label>
+
+              {uploadedLogoDataUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadedLogoDataUrl(null);
+                    setUploadedLogoName("");
+                  }}
+                  className="text-[11px] px-2 py-1 rounded-md border border-gray-200 bg-white hover:bg-gray-50"
+                  title={uploadedLogoName}
+                >
+                  Remove
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoPreset(null);
+                  setUploadedLogoDataUrl(null);
+                  setUploadedLogoName("");
+                }}
+                className={`flex flex-col items-center justify-center w-20 h-16 rounded-lg border text-[11px] ${
+                  logoPreset === null && !uploadedLogoDataUrl
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                    : "border-gray-200 text-gray-700"
+                }`}
+              >
+                <span className="text-lg mb-1">🚫</span>
+                <span>No logo</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoPreset("scan-me");
+                  setUploadedLogoDataUrl(null);
+                  setUploadedLogoName("");
+                }}
+                className={`flex flex-col items-center justify-center w-20 h-16 rounded-lg border text-[11px] ${
+                  logoPreset === "scan-me"
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                    : "border-gray-200 text-gray-700"
+                }`}
+              >
+                <span className="text-xs font-bold border border-gray-300 px-1.5 py-0.5 rounded-full">
+                  SCAN
+                </span>
+                <span className="text-xs font-bold mt-0.5">ME</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoPreset("camera");
+                  setUploadedLogoDataUrl(null);
+                  setUploadedLogoName("");
+                }}
+                className={`flex flex-col items-center justify-center w-20 h-16 rounded-lg border text-[11px] ${
+                  logoPreset === "camera"
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                    : "border-gray-200 text-gray-700"
+                }`}
+              >
+                <span className="text-lg mb-1">📷</span>
+                <span>Camera</span>
+              </button>
+            </div>
+
+            {uploadedLogoDataUrl && (
+              <p className="text-[11px] text-gray-500">
+                Uploaded:{" "}
+                <span className="font-medium">{uploadedLogoName}</span>
+              </p>
+            )}
+          </section>
+
+          {/* FRAMES */}
+          <section className="space-y-2">
+            <h4 className="text-xs font-semibold text-gray-700">
+              Frames ✨{" "}
+              <span className="text-[10px] text-emerald-500">NEW</span>
+            </h4>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {frameOptions.map((opt) => {
+                const isActive = frameStyle === opt.key;
+                const base =
+                  "w-16 h-16 rounded-xl border flex items-center justify-center bg-white";
+
+                let innerBox = "w-10 h-10 bg-black rounded-lg";
+                if (opt.key === "soft-card") {
+                  innerBox =
+                    "w-10 h-10 bg-black rounded-2xl shadow-[0_0_0_3px_rgba(255,255,255,1)]";
+                } else if (opt.key === "dark-badge") {
+                  innerBox =
+                    "w-10 h-10 bg-black rounded-[22px] shadow-[0_0_0_4px_rgba(15,23,42,1)]";
+                } else if (opt.key === "outline-tag") {
+                  innerBox =
+                    "w-10 h-10 bg-black rounded-xl shadow-[0_0_0_3px_rgba(16,185,129,1)]";
+                }
+
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setFrameStyle(opt.key)}
+                    className={`flex flex-col items-center text-[11px] ${
+                      isActive ? "text-emerald-700" : "text-gray-600"
+                    }`}
+                  >
+                    <div
+                      className={`${
+                        isActive
+                          ? "border-emerald-500 ring-2 ring-emerald-200"
+                          : "border-gray-200"
+                      } ${base}`}
+                    >
+                      <div className={innerBox} />
+                    </div>
+                    <span className="mt-1">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* PATTERN */}
+          <section className="space-y-2">
+            <h4 className="text-xs font-semibold text-gray-700">
+              Pattern & Shape
+            </h4>
+            <div className="flex gap-3 flex-wrap">
+              {patternOptions.map((opt) => {
+                const isActive = patternStyle === opt.key;
+
+                const dotClass =
+                  opt.key === "circles"
+                    ? "rounded-full"
+                    : opt.key === "rounded" || opt.key === "smooth"
+                    ? "rounded-[4px]"
+                    : opt.key === "thin"
+                    ? "rounded-[6px] scale-90"
+                    : "rounded-none";
+
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setPatternStyle(opt.key)}
+                    className={`flex flex-col items-center text-[11px] ${
+                      isActive ? "text-emerald-700" : "text-gray-600"
+                    }`}
+                  >
+                    <div
+                      className={`w-16 h-16 rounded-xl border bg-white flex items-center justify-center ${
+                        isActive
+                          ? "border-emerald-500 ring-2 ring-emerald-200"
+                          : "border-gray-200"
+                      }`}
+                    >
+                      <div className="grid grid-cols-3 grid-rows-3 gap-[2px]">
+                        {Array.from({ length: 9 }).map((_, i) => (
+                          <div
+                            key={i}
+                            className={`w-2 h-2 bg-black ${dotClass}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <span className="mt-1">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+
+        {/* Right: styled preview + controls */}
+        <div className="w-80 bg-gray-50 rounded-lg flex flex-col items-center justify-between py-6 px-4">
+          {/* ✅ The export container */}
+          <div
+            ref={frameExportRef}
+            className={`mb-4 w-full flex flex-col items-center ${frameClass}`}
+          >
+            <div
+              className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
+              style={{ width: size, height: size }}
+            >
+              <div ref={qrWrapperRef} />
+            </div>
+
+            {showFooter && (
+              <div
+                className={`mt-3 text-[10px] tracking-[0.16em] uppercase text-center ${
+                  frameStyle === "dark-badge"
+                    ? "text-gray-300"
+                    : "text-gray-400"
+                }`}
+              >
+                POWERED BY YOUR BRAND
+              </div>
+            )}
+          </div>
+
+          <div className="flex w-full gap-2 mt-2">
+            <button
+              type="button"
+              onClick={handlePrevStep}
+              className="flex-1 border border-gray-300 text-sm py-2 rounded-lg bg-white hover:bg-gray-50"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={handleNextStep}
+              className="flex-1 bg-emerald-600 text-white text-sm font-semibold py-2 rounded-lg"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ---------- STEP 3 ----------
+  const renderStep3 = () => {
+    const frameClass =
+      frameStyle === "soft-card"
+        ? "p-4 bg-white rounded-3xl shadow-sm border border-gray-100"
+        : frameStyle === "dark-badge"
+        ? "p-5 bg-slate-900 rounded-3xl shadow-md"
+        : frameStyle === "outline-tag"
+        ? "p-4 bg-white rounded-3xl border-2 border-emerald-500"
+        : "p-0 bg-transparent";
+
+    const showFooter =
+      frameStyle === "dark-badge" || frameStyle === "outline-tag";
+
+    return (
+      <div className="flex gap-6 p-6">
+        <div className="flex-1 space-y-4 max-w-xl">
+          <h3 className="text-sm font-semibold text-gray-800">
+            Name your QR Code and download it
+          </h3>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Title</label>
+            <input
+              type="text"
+              value={qrTitle}
+              onChange={(e) => setQrTitle(e.target.value)}
+              placeholder={`${selectedType} QR Code`}
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">
+                Image format
+              </label>
+              <select
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={downloadFormat}
+                onChange={(e) =>
+                  setDownloadFormat(e.target.value as "png" | "svg")
+                }
+              >
+                <option value="png">PNG</option>
+                <option value="svg">SVG</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">
+                Image size
+              </label>
+              <select
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={size}
+                onChange={(e) => setSize(Number(e.target.value))}
+              >
+                <option value={256}>256 px</option>
+                <option value={512}>512 px</option>
+                <option value={768}>768 px</option>
+              </select>
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-400">
+            Click <strong>Download</strong> — it will automatically save the QR
+            Code in your account and download the file.
+          </p>
+
+          <div className="flex gap-3 mt-4">
+            <button
+              type="button"
+              onClick={handlePrevStep}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm bg-white hover:bg-gray-50"
+            >
+              Back
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-semibold"
+            >
+              Download
+            </button>
+          </div>
+        </div>
+
+        <div className="w-80 bg-gray-50 rounded-lg flex flex-col items-center justify-center py-6 px-4">
+          {/* ✅ Export container here also (same ref) */}
+          <div
+            ref={frameExportRef}
+            className={`w-full flex flex-col items-center ${frameClass}`}
+          >
+            <div
+              className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
+              style={{ width: size, height: size }}
+            >
+              <div ref={qrWrapperRef} />
+            </div>
+
+            {showFooter && (
+              <div
+                className={`mt-3 text-[10px] tracking-[0.16em] uppercase text-center ${
+                  frameStyle === "dark-badge"
+                    ? "text-gray-300"
+                    : "text-gray-400"
+                }`}
+              >
+                POWERED BY YOUR BRAND
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderWizard = () => (
+    <div className="bg-white rounded-xl shadow-sm border mb-8">
+      {renderStepNav()}
+      {wizardStep === 1 && renderStep1()}
+      {wizardStep === 2 && renderStep2()}
+      {wizardStep === 3 && renderStep3()}
+    </div>
+  );
+
+  // ---------- MAIN RENDER ----------
   return (
     <AuthGuard>
       <DashboardLayout>
@@ -190,27 +1860,37 @@ export default function ActiveCodes() {
         </Head>
 
         <div className="space-y-6">
+          {/* PAGE HEADER */}
           <div className="flex justify-between items-center">
             <h2 className="text-2xl font-bold text-gray-800">
               Active QR Codes
             </h2>
-            <Link
-              href="/"
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            <button
+              onClick={() => {
+                resetWizard();
+                setWizardStep(1);
+              }}
+              className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 text-sm font-semibold"
             >
-              Create New QR Code
-            </Link>
+              + Create QR Code
+            </button>
           </div>
 
+          {/* WIZARD */}
+          {renderWizard()}
+
+          {/* SEARCH BAR */}
           <div className="space-y-4">
-            {/* Search input */}
             <div className="relative">
               <input
                 type="text"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 placeholder="Search QR codes..."
-                className="w-full px-4 py-2 pl-10 border rounded-lg"
+                className="w-full px-4 py-2 pl-10 border rounded-lg text-sm"
               />
               <svg
                 className="w-5 h-5 absolute left-3 top-2.5 text-gray-400"
@@ -227,9 +1907,10 @@ export default function ActiveCodes() {
               </svg>
             </div>
 
+            {/* LIST */}
             {loading ? (
               <div className="text-center py-12">
-                <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto" />
+                <div className="animate-spin w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full mx-auto" />
               </div>
             ) : codes.length > 0 ? (
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -238,40 +1919,48 @@ export default function ActiveCodes() {
                     <thead className="bg-gray-50">
                       <tr>
                         {["Title", "Type", "Content", "Created", "Scans"].map(
-                          (label, index) => (
-                            <th
-                              key={index}
-                              onClick={() =>
-                                handleSort(
-                                  label.toLowerCase() as typeof sortField
-                                )
-                              }
-                              className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                            >
-                              <div className="flex items-center gap-1">
-                                {label}
-                                {sortField === label.toLowerCase() && (
-                                  <svg
-                                    className={`w-4 h-4 transform ${
-                                      sortDirection === "desc"
-                                        ? "rotate-180"
-                                        : ""
-                                    }`}
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M5 15l7-7 7 7"
-                                    />
-                                  </svg>
-                                )}
-                              </div>
-                            </th>
-                          )
+                          (label, index) => {
+                            const field =
+                              label.toLowerCase() === "created"
+                                ? ("createdAt" as SortField)
+                                : (label.toLowerCase() as SortField);
+
+                            return (
+                              <th
+                                key={index}
+                                onClick={() =>
+                                  ["Content"].includes(label)
+                                    ? undefined
+                                    : handleSort(field)
+                                }
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                              >
+                                <div className="flex items-center gap-1">
+                                  {label}
+                                  {sortField === field &&
+                                    label !== "Content" && (
+                                      <svg
+                                        className={`w-3 h-3 transform ${
+                                          sortDirection === "desc"
+                                            ? "rotate-180"
+                                            : ""
+                                        }`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M5 15l7-7 7 7"
+                                        />
+                                      </svg>
+                                    )}
+                                </div>
+                              </th>
+                            );
+                          }
                         )}
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions
@@ -290,7 +1979,7 @@ export default function ActiveCodes() {
                                 {truncateTitle(code.title || "Untitled")}
                               </span>
                               {code.title && code.title.length > 30 && (
-                                <div className="absolute left-0 -bottom-1 translate-y-full hidden group-hover:block z-50 w-auto p-2 bg-gray-900 text-white text-sm rounded-lg">
+                                <div className="absolute left-0 -bottom-1 translate-y-full hidden group-hover:block z-50 w-auto p-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap">
                                   {code.title}
                                 </div>
                               )}
@@ -307,14 +1996,14 @@ export default function ActiveCodes() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {new Date(code.createdAt).toLocaleDateString()}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-emerald-700">
                             {code.scans}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 justify-end">
                               <button
                                 onClick={() => setSelectedViewQR(code)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
                               >
                                 <EyeIcon className="w-4 h-4" />
                                 <span>View</span>
@@ -333,11 +2022,9 @@ export default function ActiveCodes() {
                                 <PauseIcon className="w-4 h-4" />
                                 <span>Pause</span>
                               </button>
-
-                              {/* NEW: Analytics button */}
                               <button
                                 onClick={() => setSelectedAnalyticsQR(code)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 text-emerald-900 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
                               >
                                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
                                 <span>Analytics</span>
@@ -352,17 +2039,20 @@ export default function ActiveCodes() {
               </div>
             ) : (
               <div className="text-center py-12 bg-white rounded-xl">
-                <p className="text-gray-500">No active QR codes found</p>
-                <Link
-                  href="/"
-                  className="text-blue-600 hover:text-blue-700 mt-2 inline-block"
+                <p className="text-gray-500">No active QR codes found.</p>
+                <button
+                  onClick={() => {
+                    resetWizard();
+                    setWizardStep(1);
+                  }}
+                  className="text-emerald-600 hover:text-emerald-700 mt-2 inline-block text-sm font-semibold"
                 >
                   Create your first QR code
-                </Link>
+                </button>
               </div>
             )}
 
-            {/* Pagination */}
+            {/* PAGINATION */}
             {totalPages > 1 && (
               <div className="flex justify-center gap-2 mt-4">
                 <button
@@ -370,7 +2060,7 @@ export default function ActiveCodes() {
                     setCurrentPage((prev) => Math.max(prev - 1, 1))
                   }
                   disabled={currentPage === 1}
-                  className="px-3 py-1 rounded-lg bg-gray-100 disabled:opacity-50"
+                  className="px-3 py-1 rounded-lg bg-gray-100 text-sm disabled:opacity-50"
                 >
                   Previous
                 </button>
@@ -379,9 +2069,9 @@ export default function ActiveCodes() {
                     <button
                       key={page}
                       onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded-lg ${
+                      className={`px-3 py-1 rounded-lg text-sm ${
                         currentPage === page
-                          ? "bg-blue-600 text-white"
+                          ? "bg-emerald-600 text-white"
                           : "bg-gray-100"
                       }`}
                     >
@@ -394,15 +2084,16 @@ export default function ActiveCodes() {
                     setCurrentPage((prev) => Math.min(prev + 1, totalPages))
                   }
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 rounded-lg bg-gray-100 disabled:opacity-50"
+                  className="px-3 py-1 rounded-lg bg-gray-100 text-sm disabled:opacity-50"
                 >
-                  Next 
+                  Next
                 </button>
               </div>
             )}
           </div>
         </div>
 
+        {/* MODALS */}
         {showEditModal && selectedQR && (
           <EditQRModal
             qrCode={selectedQR}
@@ -421,7 +2112,6 @@ export default function ActiveCodes() {
           />
         )}
 
-        {/* NEW: analytics modal */}
         {selectedAnalyticsQR && (
           <ScanAnalyticsModal
             qrCode={selectedAnalyticsQR}
