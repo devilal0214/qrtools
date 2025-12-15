@@ -40,6 +40,23 @@
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
+          {
+        "collectionGroup": "qrcodes",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "userId", "order": "ASCENDING" },
+          { "fieldPath": "isActive", "order": "ASCENDING" },
+          { "fieldPath": "createdAt", "order": "DESCENDING" }
+        ]
+      },
+    {
+        "collectionGroup": "qrcodes",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "userId", "order": "ASCENDING" },
+          { "fieldPath": "isActive", "order": "ASCENDING" }
+        ]
+      },
     {
       "collectionGroup": "shorturls",
       "queryScope": "COLLECTION",
@@ -47,7 +64,31 @@
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "qrcodes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" }
+      ]
+    },
+
+    {
+      "collectionGroup": "qr_templates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" }
+      ]
+    },
+
+    {
+      "collectionGroup": "scanEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "scannedAt", "order": "DESCENDING" }
+      ]
     }
-  ],
+  ], 
   "fieldOverrides": []
 }

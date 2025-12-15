@@ -23,6 +23,7 @@
     "firebase": "^10.5.2",
     "firebase-admin": "^13.2.0",
     "formidable": "^3.5.4",
+    "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "nanoid": "^5.1.6",
     "next": "13.5.11",
