@@ -1,15 +1,17 @@
 export const ContentTypes = {
-  PLAIN_TEXT: 'PLAIN_TEXT',
-  TEXT: 'TEXT',  // Add TEXT type
   URL: 'URL',
+  PDF: 'PDF',
   MULTI_URL: 'MULTI_URL',
   CONTACT: 'CONTACT',
+  PLAIN_TEXT: 'PLAIN_TEXT',
+  APP: 'APP',
   SMS: 'SMS',
+  EMAIL: 'EMAIL',
   PHONE: 'PHONE',
-  LOCATION: 'LOCATION',
-  PDF: 'PDF',
-  FILE: 'FILE',
-  SOCIALS: 'SOCIALS'
+  // Hidden for now
+  // LOCATION: 'LOCATION',
+  // FILE: 'FILE',
+  // SOCIALS: 'SOCIALS'
 } as const;
 
 export type ContentType = typeof ContentTypes[keyof typeof ContentTypes];

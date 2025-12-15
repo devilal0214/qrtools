@@ -208,6 +208,36 @@ const ContentTypeIcons = {
       />
     </svg>
   ),
+  EMAIL: (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+      />
+    </svg>
+  ),
+  APP: (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
+      />
+    </svg>
+  ),
 } as const;
 
 const SOCIAL_PLATFORMS = [
@@ -358,8 +388,21 @@ export default function Home() {
   });
   const [multiUrls, setMultiUrls] = useState<string[]>([""]);
   const [smsInfo, setSmsInfo] = useState({ number: "", message: "" });
+  const [emailInfo, setEmailInfo] = useState({ email: "", subject: "", body: "" });
+  const [appInfo, setAppInfo] = useState({ platform: "ios", appUrl: "" });
+  const [campaignParams, setCampaignParams] = useState({ 
+    url: "", 
+    source: "", 
+    medium: "", 
+    campaign: "", 
+    term: "", 
+    content: "" 
+  });
   const [file, setFile] = useState<File | null>(null);
   const [fileUrl, setFileUrl] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfUrl, setPdfUrl] = useState("");
+  const [pdfUploadError, setPdfUploadError] = useState("");
   const [showAuthModal, setShowAuthModal] = useState(false);
   const { user } = useAuth();
   const { enabledContentTypes, canUseContentType } = usePlanFeatures();
@@ -464,11 +507,16 @@ export default function Home() {
         setText(multiUrls.filter((url) => url.trim()).join("\n"));
       } else if (contentType === ContentTypes.SMS) {
         setText(`SMSTO:${smsInfo.number}:${smsInfo.message}`);
+      } else if (contentType === ContentTypes.EMAIL) {
+        const mailto = `mailto:${emailInfo.email}${emailInfo.subject ? `?subject=${encodeURIComponent(emailInfo.subject)}` : ''}${emailInfo.body ? `${emailInfo.subject ? '&' : '?'}body=${encodeURIComponent(emailInfo.body)}` : ''}`;
+        setText(mailto);
+      } else if (contentType === ContentTypes.APP) {
+        setText(appInfo.appUrl);
       }
     };
 
     updateQRContent();
-  }, [contentType, contactInfo, user]);
+  }, [contentType, contactInfo, user, smsInfo, emailInfo, appInfo]);
 
   useEffect(() => {
     if (text) {
@@ -741,6 +789,41 @@ export default function Home() {
       setText(fileUrl);
     } catch (error: any) {
       setError(error.message);
+    }
+  };
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset errors
+    setPdfUploadError("");
+
+    // Validate file type
+    if (file.type !== "application/pdf") {
+      setPdfUploadError("Please upload a PDF file only.");
+      return;
+    }
+
+    // Validate file size (5MB = 5 * 1024 * 1024 bytes)
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setPdfUploadError("PDF file size must not exceed 5 MB.");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const uploadedUrl = await uploadFile(file);
+      setPdfFile(file);
+      setPdfUrl(uploadedUrl);
+      setText(getBaseUrl() + uploadedUrl);
+      setError("");
+    } catch (error: any) {
+      console.error("PDF upload error:", error);
+      setPdfUploadError(error.message || "Failed to upload PDF");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1066,6 +1149,30 @@ export default function Home() {
     }
   };
 
+  const updateCampaignUrl = (params: typeof campaignParams) => {
+    const { url, source, medium, campaign, term, content } = params;
+    if (!url) {
+      setText('');
+      return;
+    }
+
+    // Build UTM parameters
+    const utmParams: string[] = [];
+    if (source) utmParams.push(`utm_source=${encodeURIComponent(source)}`);
+    if (medium) utmParams.push(`utm_medium=${encodeURIComponent(medium)}`);
+    if (campaign) utmParams.push(`utm_campaign=${encodeURIComponent(campaign)}`);
+    if (term) utmParams.push(`utm_term=${encodeURIComponent(term)}`);
+    if (content) utmParams.push(`utm_content=${encodeURIComponent(content)}`);
+
+    // Construct final URL
+    if (utmParams.length > 0) {
+      const separator = url.includes('?') ? '&' : '?';
+      setText(`${url}${separator}${utmParams.join('&')}`);
+    } else {
+      setText(url);
+    }
+  };
+
   const renderContentInput = () => {
     switch (contentType) {
       case ContentTypes.PLAIN_TEXT:
@@ -1081,13 +1188,50 @@ export default function Home() {
         );
 
       case ContentTypes.PDF:
+        return (
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Upload PDF (max 5 MB)
+              </label>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={handlePdfUpload}
+                onClick={handleInputInteraction}
+                className="block w-full text-sm text-gray-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-full file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-blue-50 file:text-blue-700
+                  hover:file:bg-blue-100"
+              />
+              {pdfUploadError && (
+                <p className="text-red-500 text-sm">{pdfUploadError}</p>
+              )}
+              {pdfFile && (
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span>{pdfFile.name} uploaded successfully</span>
+                </div>
+              )}
+            </div>
+            {pdfUrl && (
+              <div className="text-sm text-gray-600">
+                <p className="font-medium mb-1">PDF URL:</p>
+                <p className="break-all bg-gray-50 p-2 rounded">{getBaseUrl() + pdfUrl}</p>
+              </div>
+            )}
+          </div>
+        );
+      
       case ContentTypes.FILE:
         return (
           <FileUploadBox
             onFileSelect={handleFileUpload}
-            accept={
-              contentType === ContentTypes.PDF ? "application/pdf" : undefined
-            }
+            accept={undefined}
             fileUrl={fileUrl}
           />
         );
@@ -1235,10 +1379,193 @@ export default function Home() {
           </div>
         );
 
+      case ContentTypes.EMAIL:
+        return (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-gray-500">Email Address</label>
+              <input
+                type="email"
+                value={emailInfo.email}
+                onChange={(e) =>
+                  setEmailInfo({ ...emailInfo, email: e.target.value })
+                }
+                onFocus={handleInputInteraction}
+                className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                placeholder="example@email.com"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Subject (Optional)</label>
+              <input
+                type="text"
+                value={emailInfo.subject}
+                onChange={(e) =>
+                  setEmailInfo({ ...emailInfo, subject: e.target.value })
+                }
+                onFocus={handleInputInteraction}
+                className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                placeholder="Email subject"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Message (Optional)</label>
+              <textarea
+                value={emailInfo.body}
+                onChange={(e) =>
+                  setEmailInfo({ ...emailInfo, body: e.target.value })
+                }
+                onFocus={handleInputInteraction}
+                className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                rows={3}
+                placeholder="Email message"
+              />
+            </div>
+          </div>
+        );
+
+      case ContentTypes.APP:
+        return (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-gray-500">Platform</label>
+              <select
+                value={appInfo.platform}
+                onChange={(e) =>
+                  setAppInfo({ ...appInfo, platform: e.target.value })
+                }
+                onFocus={handleInputInteraction}
+                className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+              >
+                <option value="ios">iOS App Store</option>
+                <option value="android">Google Play Store</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">App URL</label>
+              <input
+                type="url"
+                value={appInfo.appUrl}
+                onChange={(e) =>
+                  setAppInfo({ ...appInfo, appUrl: e.target.value })
+                }
+                onFocus={handleInputInteraction}
+                className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                placeholder={appInfo.platform === 'ios' ? 'https://apps.apple.com/...' : 'https://play.google.com/...'}
+              />
+            </div>
+          </div>
+        );
+
       default:
+        // URL type with campaign builder
+        if (contentType === ContentTypes.URL) {
+          return (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-500">Website URL</label>
+                <input
+                  type="url"
+                  value={text}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    setCampaignParams({ ...campaignParams, url: e.target.value });
+                  }}
+                  onFocus={handleInputInteraction}
+                  className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="https://example.com"
+                />
+              </div>
+              
+              {/* Campaign URL Builder */}
+              <details className="bg-gray-50 rounded-lg p-3">
+                <summary className="cursor-pointer text-sm font-medium text-gray-700 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Campaign URL Builder (UTM Parameters)
+                </summary>
+                <div className="mt-3 space-y-2">
+                  <div>
+                    <label className="text-xs text-gray-500">Campaign Source</label>
+                    <input
+                      type="text"
+                      value={campaignParams.source}
+                      onChange={(e) => {
+                        const newParams = { ...campaignParams, source: e.target.value };
+                        setCampaignParams(newParams);
+                        updateCampaignUrl(newParams);
+                      }}
+                      className="w-full mt-1 px-3 py-1.5 rounded border text-sm"
+                      placeholder="google, facebook, newsletter"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Campaign Medium</label>
+                    <input
+                      type="text"
+                      value={campaignParams.medium}
+                      onChange={(e) => {
+                        const newParams = { ...campaignParams, medium: e.target.value };
+                        setCampaignParams(newParams);
+                        updateCampaignUrl(newParams);
+                      }}
+                      className="w-full mt-1 px-3 py-1.5 rounded border text-sm"
+                      placeholder="cpc, email, social"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Campaign Name</label>
+                    <input
+                      type="text"
+                      value={campaignParams.campaign}
+                      onChange={(e) => {
+                        const newParams = { ...campaignParams, campaign: e.target.value };
+                        setCampaignParams(newParams);
+                        updateCampaignUrl(newParams);
+                      }}
+                      className="w-full mt-1 px-3 py-1.5 rounded border text-sm"
+                      placeholder="summer_sale"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Campaign Term (Optional)</label>
+                    <input
+                      type="text"
+                      value={campaignParams.term}
+                      onChange={(e) => {
+                        const newParams = { ...campaignParams, term: e.target.value };
+                        setCampaignParams(newParams);
+                        updateCampaignUrl(newParams);
+                      }}
+                      className="w-full mt-1 px-3 py-1.5 rounded border text-sm"
+                      placeholder="keyword"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Campaign Content (Optional)</label>
+                    <input
+                      type="text"
+                      value={campaignParams.content}
+                      onChange={(e) => {
+                        const newParams = { ...campaignParams, content: e.target.value };
+                        setCampaignParams(newParams);
+                        updateCampaignUrl(newParams);
+                      }}
+                      className="w-full mt-1 px-3 py-1.5 rounded border text-sm"
+                      placeholder="banner_ad"
+                    />
+                  </div>
+                </div>
+              </details>
+            </div>
+          );
+        }
+        
+        // Other types use simple text input
         return (
           <input
-            type={contentType === ContentTypes.URL ? "url" : "text"}
+            type="text"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onFocus={handleInputInteraction}
@@ -1482,88 +1809,37 @@ export default function Home() {
       <div className="w-full max-w-5xl bg-gray-200 backdrop-blur-lg rounded-[10px] p-3 sm:p-2 shadow-xl">
         {/* TOP NAVBAR */}
         <div className="mb-3">
-          <div className="bg-white border rounded-[10px] px-2 py-2 flex items-center justify-between gap-9 shadow-sm">
-            {/* FIRST 6 MENU ITEMS */}
-            <div className="flex items-center gap-9">
-              {Object.entries(ContentTypes)
-                .slice(0, 6)
-                .map(([label, value]) => (
-                  <button
-                    key={value}
-                    onClick={() =>
-                      handleContentTypeChange(value as ContentType)
+          <div className="bg-white border rounded-[10px] px-3 sm:px-4 py-3 shadow-sm">
+            {/* Responsive Content Type Navigation */}
+            <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto scrollbar-hide">
+              {Object.entries(ContentTypes).map(([label, value]) => (
+                <button
+                  key={value}
+                  onClick={() => handleContentTypeChange(value as ContentType)}
+                  className={`flex-shrink-0 inline-flex flex-col items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all min-w-[70px] sm:min-w-[80px]
+                    ${
+                      contentType === value
+                        ? "bg-gray-900 text-white"
+                        : "bg-transparent text-gray-600 hover:bg-gray-100"
                     }
-                    className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-l text-[13px] font-semibold transition-all
-              ${
-                contentType === value
-                  ? "bg-sky-100 text-blue-600 "
-                  : "bg-transparent text-slate-600 border-transparent hover:bg-white hover:text-slate-900"
-              }
-            `}
-                  >
-                    {ContentTypeIcons[value]}
-                    <span className="whitespace-nowrap">
-                      {label.replace("_", " ")}
-                    </span>
-                  </button>
-                ))}
-            </div>
-
-            {/* MORE DROPDOWN */}
-            <div className="relative z-30">
-              <button
-                onClick={() => setShowMore((prev: boolean) => !prev)}
-                className="flex items-center gap-2 px-4 py-2 rounded-full bg-white text-slate-700 border border-slate-300 hover:bg-slate-100"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+                  `}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-
-              {/* DROPDOWN MENU */}
-              {showMore && (
-                <div className="absolute right-0 mt-2 w-60 z-50  bg-white border border-slate-200 rounded-[10px] shadow-xl p-2 max-h-64 overflow-y-auto">
-                  {Object.entries(ContentTypes)
-                    .slice(6) // Remaining items
-                    .map(([label, value]) => (
-                      <button
-                        key={value}
-                        onClick={() => {
-                          handleContentTypeChange(value as ContentType);
-                          setShowMore(false);
-                        }}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-all
-                  ${
-                    contentType === value
-                      ? "bg-blue-50 text-blue-600"
-                      : "hover:bg-slate-100 text-slate-700"
-                  }
-                `}
-                      >
-                        {ContentTypeIcons[value]}
-                        <span>{label.replace("_", " ")}</span>
-                      </button>
-                    ))}
-                </div>
-              )}
+                  <div className="w-5 h-5 sm:w-6 sm:h-6">
+                    {ContentTypeIcons[value]}
+                  </div>
+                  <span className="whitespace-nowrap text-center leading-tight">
+                    {label === "MULTI_URL" ? "Multi-Url" : label.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
         {/* MAIN BOX (style content + QR preview) */}
-        <div className="grid lg:grid-cols-5 gap-8 bg-white sm:p-7 rounded-[10px]">
+        <div className="grid lg:grid-cols-5 gap-4 sm:gap-6 lg:gap-8 bg-white p-4 sm:p-6 lg:p-7 rounded-[10px]">
           {/* Left Panel - Form Controls */}
-          <div className="lg:col-span-3 space-y-6">
+          <div className="lg:col-span-3 space-y-4 sm:space-y-6">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">
                 Title
@@ -1573,7 +1849,7 @@ export default function Home() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onFocus={handleInputInteraction}
-                className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full px-3 sm:px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none text-sm sm:text-base"
                 placeholder="Enter QR code title"
               />
             </div>
@@ -1771,22 +2047,22 @@ export default function Home() {
 
           {/* Right Panel - Preview and Download */}
           <div className="lg:col-span-2">
-            <div className="text-center  top-20 space-y-6">
-              <div className="bg-gray-100 rounded-[10px] p-6 relative">
+            <div className="text-center lg:sticky lg:top-20 space-y-4 sm:space-y-6">
+              <div className="bg-gray-100 rounded-[10px] p-4 sm:p-6 relative">
                 {/* Step title */}
                 <div className="flex items-center justify-center gap-3 mb-2">
-                  <p className="text-base font-semibold text-gray-800">
+                  <p className="text-sm sm:text-base font-semibold text-gray-800">
                     Download your QR
                   </p>
                 </div>
 
                 {/* Grey preview area */}
-                <div className="flex items-center justify-center py-10 px-4 min-h-[400px]">
+                <div className="flex items-center justify-center py-6 sm:py-10 px-4 min-h-[300px] sm:min-h-[400px]">
                   <div ref={qrPreviewRef}>
                     {isLoading ? (
-                      <div className="animate-pulse flex flex-col itemscenter">
-                        <div className="w-32 h-32 bg-gray-200" />
-                        <p className="mt-4 text-sm text-gray-400">
+                      <div className="animate-pulse flex flex-col items-center">
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 bg-gray-200 rounded-lg" />
+                        <p className="mt-4 text-xs sm:text-sm text-gray-400">
                           Generating QR code...
                         </p>
                       </div>
@@ -1796,71 +2072,78 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Download button + dropdown inside grey box */}
+                {/* Save and Download buttons */}
                 {text && (
-                  <div className="mt-4 flex justify-center relative">
+                  <div className="mt-4 flex flex-col sm:flex-row justify-center gap-2 sm:gap-3">
+                    {/* Save Button - Text Only */}
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (!user) {
                           setShowAuthModal(true);
                           return;
                         }
-                        setShowDownloadMenu((prev) => !prev);
+                        const id = await saveQRCode();
+                        if (id) {
+                          alert("QR Code saved successfully!");
+                        }
                       }}
-                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-50 text-sm font-medium"
+                      disabled={isLoading}
+                      className="inline-flex items-center justify-center px-6 sm:px-8 py-2.5 rounded-full bg-gray-300 text-gray-700 hover:bg-gray-400 text-sm sm:text-base font-medium disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
                     >
-                      <DownloadIcon />
-                      <span>Download QR</span>
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
+                      <span>Save</span>
                     </button>
 
-                    {showDownloadMenu && (
-                      <div className="absolute left-1/2 top-full mt-3 -translate-x-1/2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-40 text-left">
-                        <button
-                          onClick={() => {
-                            setShowDownloadMenu(false);
-                            handleDirectDownload("png");
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50"
-                        >
-                          <span className="font-medium text-gray-800">
-                            Download PNG
-                          </span>
-                          <span className="ml-auto text-xs text-gray-400">
-                            .png
-                          </span>
-                        </button>
+                    {/* Download Button - Icon Only */}
+                    <div className="relative w-full sm:w-auto">
+                      <button
+                        onClick={() => {
+                          if (!user) {
+                            setShowAuthModal(true);
+                            return;
+                          }
+                          setShowDownloadMenu((prev) => !prev);
+                        }}
+                        className="inline-flex items-center justify-center p-3 rounded-full bg-white text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-50 w-full sm:w-auto"
+                      >
+                        <DownloadIcon />
+                      </button>
 
-                        <div className="h-px bg-gray-100 my-1" />
+                      {showDownloadMenu && (
+                        <div className="absolute left-1/2 top-full mt-3 -translate-x-1/2 w-full sm:w-64 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-40 text-left">
+                          <button
+                            onClick={() => {
+                              setShowDownloadMenu(false);
+                              handleDirectDownload("png");
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50"
+                          >
+                            <span className="font-medium text-gray-800">
+                              Download PNG
+                            </span>
+                            <span className="ml-auto text-xs text-gray-400">
+                              .png
+                            </span>
+                          </button>
 
-                        <button
-                          onClick={() => {
-                            setShowDownloadMenu(false);
-                            handleDirectDownload("svg");
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50"
-                        >
-                          <span className="font-medium text-gray-800">
-                            Download SVG
-                          </span>
-                          <span className="ml-auto text-xs text-gray-400">
-                            .svg
-                          </span>
-                        </button>
-                      </div>
-                    )}
+                          <div className="h-px bg-gray-100 my-1" />
+
+                          <button
+                            onClick={() => {
+                              setShowDownloadMenu(false);
+                              handleDirectDownload("svg");
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50"
+                          >
+                            <span className="font-medium text-gray-800">
+                              Download SVG
+                            </span>
+                            <span className="ml-auto text-xs text-gray-400">
+                              .svg
+                            </span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
