@@ -58,7 +58,18 @@ export default function QRCodeViewer() {
           setQRData(data);
 
           if (data.type === "MULTI_URL") {
-            setContents(data.content.split("\n").filter(Boolean));
+            try {
+              const parsed = JSON.parse(data.content);
+              if (parsed.urls && Array.isArray(parsed.urls)) {
+                setContents(parsed.urls.map((item: any) => item.url).filter(Boolean));
+              } else {
+                // Fallback for old format
+                setContents(data.content.split("\n").filter(Boolean));
+              }
+            } catch {
+              // Fallback for old format
+              setContents(data.content.split("\n").filter(Boolean));
+            }
           } else {
             setContents([data.content]);
           }

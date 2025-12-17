@@ -206,6 +206,36 @@ const ContentTypeIcons: Record<ContentTypeKey, JSX.Element> = {
       />
     </svg>
   ),
+  EMAIL: (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+      />
+    </svg>
+  ),
+  APP: (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
+      />
+    </svg>
+  ),
   SOCIALS: (
     <svg
       className="w-5 h-5"
@@ -537,7 +567,8 @@ export default function Home() {
     country: "",
     website: "",
   });
-  const [multiUrls, setMultiUrls] = useState<string[]>([""]);
+  const [multiUrls, setMultiUrls] = useState<Array<{url: string, title: string}>>([{url: "", title: ""}]);
+  const [showAddUrlModal, setShowAddUrlModal] = useState(false);
   const [smsInfo, setSmsInfo] = useState({ number: "", message: "" });
   const [fileUrl, setFileUrl] = useState("");
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -545,12 +576,62 @@ export default function Home() {
   const socialContainerRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState("");
   const { user } = useAuth();
-  const { canCreateMoreQR, loading: planLoading, qrLimit } = usePlanFeatures();
+  const { 
+    canCreateMoreQR, 
+    loading: planLoading, 
+    qrLimit, 
+    canUseFeature,
+    isTrialActive,
+    trialDaysRemaining,
+    planName 
+  } = usePlanFeatures();
   const router = useRouter();
 
-  // NEW: toggle states
+  // NEW: toggle states - check if user can access premium features
   const [trackScansEnabled, setTrackScansEnabled] = useState(false);
   const [removeWatermarkEnabled, setRemoveWatermarkEnabled] = useState(false);
+
+  // Watermark settings from admin
+  const [watermarkSettings, setWatermarkSettings] = useState<{
+    enabled: boolean;
+    logoUrl: string;
+    text: string;
+    position: string;
+    size: string;
+    opacity: number;
+  } | null>(null);
+
+  // Fetch watermark settings from Firestore
+  useEffect(() => {
+    const fetchWatermarkSettings = async () => {
+      try {
+        const settingsDoc = await getDoc(doc(db, 'settings', 'config'));
+        if (settingsDoc.exists()) {
+          const data = settingsDoc.data();
+          if (data.watermark) {
+            setWatermarkSettings(data.watermark);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching watermark settings:', error);
+      }
+    };
+    fetchWatermarkSettings();
+  }, []);
+
+  // Update toggle states based on plan features
+  useEffect(() => {
+    if (canUseFeature('tracking')) {
+      // Keep current state if premium access
+    } else {
+      setTrackScansEnabled(false);
+    }
+    if (canUseFeature('removeWatermark')) {
+      // Keep current state if premium access
+    } else {
+      setRemoveWatermarkEnabled(false);
+    }
+  }, [canUseFeature]);
 
   const handleContentTypeChange = (newType: ContentType) => {
     if (!user) {
@@ -584,13 +665,17 @@ export default function Home() {
           setError("Failed to save contact data. Please try again.");
         }
       } else if (contentType === ContentTypes.MULTI_URL) {
-        setText(multiUrls.filter((url) => url.trim()).join("\n"));
+        const multiUrlData = {
+          title: title || "My Links",
+          urls: multiUrls.filter((item) => item.url.trim())
+        };
+        setText(JSON.stringify(multiUrlData));
       } else if (contentType === ContentTypes.SMS) {
         setText(`SMSTO:${smsInfo.number}:${smsInfo.message}`);
       }
     };
     updateQRContent();
-  }, [contentType, contactInfo, user, multiUrls, smsInfo]);
+  }, [contentType, contactInfo, user, multiUrls, smsInfo, title]);
 
   /* loading state when QR params change */
   useEffect(() => {
@@ -864,37 +949,51 @@ export default function Home() {
 
       case ContentTypes.MULTI_URL:
         return (
-          <div className="space-y-3">
-            {multiUrls.map((url, index) => (
-              <div key={index} className="flex gap-2">
-                <input
-                  type="url"
-                  value={url}
-                  onChange={(e) => {
-                    const copy = [...multiUrls];
-                    copy[index] = e.target.value;
-                    setMultiUrls(copy);
-                  }}
-                  onFocus={handleInputInteraction}
-                  className="flex-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                  placeholder={`URL ${index + 1}`}
-                />
-                <button
-                  onClick={() => {
-                    const copy = multiUrls.filter((_, i) => i !== index);
-                    setMultiUrls(copy.length ? copy : [""]);
-                  }}
-                  className="px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-gray-500">Page Title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onFocus={handleInputInteraction}
+                className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                placeholder="Your title here"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-xs text-gray-500">Links ({multiUrls.filter(u => u.url.trim()).length})</label>
+              {multiUrls.map((item, index) => {
+                if (!item.url.trim()) return null;
+                return (
+                  <div key={index} className="p-3 bg-gray-50 rounded-lg flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{item.title || 'Untitled'}</p>
+                      <p className="text-xs text-gray-500 truncate">{item.url}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const copy = multiUrls.filter((_, i) => i !== index);
+                        setMultiUrls(copy.length ? copy : [{url: "", title: ""}]);
+                      }}
+                      className="text-red-500 hover:text-red-700 text-xl leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            
             <button
-              onClick={() => setMultiUrls([...multiUrls, ""])}
-              className="text-sm text-blue-600 hover:text-blue-700"
+              onClick={() => setShowAddUrlModal(true)}
+              className="w-full py-2 px-4 text-sm text-green-600 hover:text-green-700 font-medium flex items-center justify-center gap-2 border border-dashed border-green-600 rounded-lg hover:bg-green-50"
             >
-              + Add URL
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Link
             </button>
           </div>
         );
@@ -1571,6 +1670,50 @@ export default function Home() {
 
     const QR_PIXEL_SIZE = 256;
 
+    // Check if watermark should be shown
+    const shouldShowWatermark = watermarkSettings?.enabled && 
+      !removeWatermarkEnabled && 
+      !canUseFeature('removeWatermark');
+
+    // Watermark component
+    const WatermarkOverlay = () => {
+      if (!shouldShowWatermark) return null;
+
+      const sizeMap = {
+        small: 'text-[8px] px-1.5 py-0.5',
+        medium: 'text-[10px] px-2 py-1',
+        large: 'text-xs px-2.5 py-1.5'
+      };
+
+      const positionMap = {
+        'bottom-right': 'bottom-2 right-2',
+        'bottom-left': 'bottom-2 left-2',
+        'bottom-center': 'bottom-2 left-1/2 -translate-x-1/2'
+      };
+
+      return (
+        <div 
+          className={`absolute ${positionMap[watermarkSettings.position as keyof typeof positionMap] || 'bottom-2 right-2'} 
+            ${sizeMap[watermarkSettings.size as keyof typeof sizeMap] || 'text-[8px] px-1.5 py-0.5'}
+            bg-white rounded flex items-center gap-1 shadow-sm`}
+          style={{ opacity: watermarkSettings.opacity }}
+        >
+          {watermarkSettings.logoUrl && (
+            <img 
+              src={watermarkSettings.logoUrl} 
+              alt="watermark" 
+              className="h-3 w-auto object-contain"
+            />
+          )}
+          {watermarkSettings.text && (
+            <span className="text-gray-700 font-medium whitespace-nowrap">
+              {watermarkSettings.text}
+            </span>
+          )}
+        </div>
+      );
+    };
+
     const QRCore = (
       <div className="relative inline-block">
         <StyledQRCode
@@ -1639,8 +1782,9 @@ export default function Home() {
       case "none":
       case "noFrame":
         return (
-          <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
+          <div className="relative bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
             {QRCore}
+            <WatermarkOverlay />
           </div>
         );
 
@@ -1650,6 +1794,7 @@ export default function Home() {
             <div className="rounded-full bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.25)] border border-slate-100">
               <div className="rounded-full overflow-hidden">{QRCore}</div>
             </div>
+            <WatermarkOverlay />
           </div>
         );
 
@@ -1657,11 +1802,12 @@ export default function Home() {
         return (
           <div className="inline-flex flex-col items-center">
             <div
-              className="bg-white rounded-2xl shadow-xl border border-yellow-300/60
+              className="relative bg-white rounded-2xl shadow-xl border border-yellow-300/60
                       px-5 pt-5 pb-4 flex flex-col items-center"
             >
               {QRCore}
               <ScanMeButton color="#F59E0B" />
+              <WatermarkOverlay />
             </div>
           </div>
         );
@@ -1670,11 +1816,12 @@ export default function Home() {
         return (
           <div className="inline-flex flex-col items-center">
             <div
-              className="bg-white rounded-2xl shadow-xl border border-purple-300/60
+              className="relative bg-white rounded-2xl shadow-xl border border-purple-300/60
                       px-5 pb-5 pt-3 flex flex-col items-center"
             >
               <ScanMeButton color="#A855F7" />
               <div className="mt-2">{QRCore}</div>
+              <WatermarkOverlay />
             </div>
           </div>
         );
@@ -1683,11 +1830,12 @@ export default function Home() {
         return (
           <div className="inline-flex flex-col items-center">
             <div
-              className="bg-white rounded-2xl shadow-xl border border-blue-300/60
+              className="relative bg-white rounded-2xl shadow-xl border border-blue-300/60
                       px-5 pt-5 pb-4 flex flex-col items-center"
             >
               {QRCore}
               <ScanMeButton color="#3B82F6" />
+              <WatermarkOverlay />
             </div>
           </div>
         );
@@ -1696,11 +1844,12 @@ export default function Home() {
         return (
           <div className="inline-flex flex-col items-center">
             <div
-              className="bg-white rounded-2xl shadow-xl border border-emerald-300/60
+              className="relative bg-white rounded-2xl shadow-xl border border-emerald-300/60
                       px-5 pt-5 pb-4 flex flex-col items-center"
             >
               {QRCore}
               <ScanMeButton color="#15803D" />
+              <WatermarkOverlay />
             </div>
           </div>
         );
@@ -1709,22 +1858,99 @@ export default function Home() {
         return (
           <div className="inline-flex flex-col items-center">
             <div
-              className="bg-white rounded-2xl shadow-xl border border-rose-300/60
+              className="relative bg-white rounded-2xl shadow-xl border border-rose-300/60
                       px-5 pt-5 pb-4 flex flex-col items-center"
             >
               {QRCore}
               <ScanMeButton color="#EF4444" />
+              <WatermarkOverlay />
             </div>
           </div>
         );
 
       default:
         return (
-          <div className="bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
+          <div className="relative bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
             {QRCore}
+            <WatermarkOverlay />
           </div>
         );
     }
+  };
+
+  /* -------------------------------------------------------------- */
+  /* Add URL Modal for Multi-URL                                     */
+  /* -------------------------------------------------------------- */
+  
+  const AddUrlModal = () => {
+    const [newUrl, setNewUrl] = useState("");
+    const [newUrlTitle, setNewUrlTitle] = useState("");
+    
+    const handleAddUrl = () => {
+      if (newUrl.trim()) {
+        setMultiUrls([...multiUrls.filter(u => u.url.trim()), { url: newUrl, title: newUrlTitle || newUrl }]);
+        setNewUrl("");
+        setNewUrlTitle("");
+        setShowAddUrlModal(false);
+      }
+    };
+    
+    if (!showAddUrlModal) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold text-gray-900">Add New Link</h3>
+            <button onClick={() => setShowAddUrlModal(false)} className="text-gray-500 hover:text-gray-700">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Link Title</label>
+              <input
+                type="text"
+                value={newUrlTitle}
+                onChange={(e) => setNewUrlTitle(e.target.value)}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="e.g., My Website"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
+              <input
+                type="url"
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="https://example.com"
+              />
+            </div>
+            
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowAddUrlModal(false)}
+                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddUrl}
+                disabled={!newUrl.trim()}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add Link
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   /* -------------------------------------------------------------- */
@@ -1736,6 +1962,40 @@ export default function Home() {
       <Head>
         <title>QR Code Generator</title>
       </Head>
+
+      {/* Trial Banner */}
+      {user && isTrialActive && (
+        <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-4 text-center">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4">
+            <span className="text-sm font-medium">
+              🎉 Premium Trial Active: {trialDaysRemaining} {trialDaysRemaining === 1 ? 'day' : 'days'} remaining
+            </span>
+            <button
+              onClick={() => router.push('/pricing')}
+              className="bg-white text-purple-600 px-4 py-1 rounded-full text-xs font-semibold hover:bg-purple-50 transition-colors"
+            >
+              Upgrade Now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Free Plan Limit Banner */}
+      {user && !isTrialActive && planName === 'Free' && (
+        <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-3 px-4 text-center">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4">
+            <span className="text-sm font-medium">
+              ⚡ Unlock Premium Features - Get tracking, remove watermarks, and more!
+            </span>
+            <button
+              onClick={() => router.push('/pricing')}
+              className="bg-white text-blue-600 px-4 py-1 rounded-full text-xs font-semibold hover:bg-blue-50 transition-colors"
+            >
+              View Plans
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 py-8 lg:py-12">
         <header className="text-center mb-6">
@@ -1804,10 +2064,6 @@ export default function Home() {
                     "Create a pre-filled SMS message"}
                   {contentType === ContentTypes.PHONE &&
                     "Link a phone number for quick calls"}
-                  {contentType === ContentTypes.LOCATION &&
-                    "Open this address on a map"}
-                  {contentType === ContentTypes.SOCIALS &&
-                    "Send users to your social profiles"}
                 </p>
                 <p className="text-[11px] md:text-xs text-zinc-300">
                   {contentType === ContentTypes.URL &&
@@ -1828,11 +2084,15 @@ export default function Home() {
                         setShowAuthModal(true);
                         return;
                       }
+                      if (!canUseFeature('tracking')) {
+                        router.push('/pricing');
+                        return;
+                      }
                       setTrackScansEnabled((prev) => !prev);
                     }}
                     className={`relative w-10 h-5 rounded-full border flex items-center transition-colors
                       ${
-                        trackScansEnabled
+                        trackScansEnabled && canUseFeature('tracking')
                           ? "bg-lime-400 border-lime-300"
                           : "bg-zinc-700 border-zinc-600"
                       }`}
@@ -1840,23 +2100,38 @@ export default function Home() {
                     <span
                       className={`w-4 h-4 rounded-full bg-white transform transition-transform duration-200
                         ${
-                          trackScansEnabled
+                          trackScansEnabled && canUseFeature('tracking')
                             ? "translate-x-[14px]"
                             : "translate-x-[2px]"
                         }`}
                     />
                   </button>
-                  <span>Track your scans</span>
+                  <span>Track your scans {!canUseFeature('tracking') && '✨'}</span>
+                  {!canUseFeature('tracking') && (
+                    <span className="text-[10px] bg-purple-500/20 text-purple-200 px-2 py-0.5 rounded-full border border-purple-400/60">
+                      {isTrialActive ? `${trialDaysRemaining}d trial` : 'Premium'}
+                    </span>
+                  )}
                 </div>
 
                 {/* Remove watermark */}
                 <div className="flex items-center gap-2 text-xs md:text-sm text-zinc-200">
                   <button
                     type="button"
-                    onClick={() => setRemoveWatermarkEnabled((prev) => !prev)}
+                    onClick={() => {
+                      if (!user) {
+                        setShowAuthModal(true);
+                        return;
+                      }
+                      if (!canUseFeature('removeWatermark')) {
+                        router.push('/pricing');
+                        return;
+                      }
+                      setRemoveWatermarkEnabled((prev) => !prev);
+                    }}
                     className={`relative w-10 h-5 rounded-full border flex items-center transition-colors
                       ${
-                        removeWatermarkEnabled
+                        removeWatermarkEnabled && canUseFeature('removeWatermark')
                           ? "bg-lime-400 border-lime-300"
                           : "bg-zinc-700 border-zinc-600"
                       }`}
@@ -1864,13 +2139,18 @@ export default function Home() {
                     <span
                       className={`w-4 h-4 rounded-full bg-white transform transition-transform duration-200
                         ${
-                          removeWatermarkEnabled
+                          removeWatermarkEnabled && canUseFeature('removeWatermark')
                             ? "translate-x-[14px]"
                             : "translate-x-[2px]"
                         }`}
                     />
                   </button>
-                  <span>Remove watermark ✨</span>
+                  <span>Remove watermark {!canUseFeature('removeWatermark') && '✨'}</span>
+                  {!canUseFeature('removeWatermark') && (
+                    <span className="text-[10px] bg-purple-500/20 text-purple-200 px-2 py-0.5 rounded-full border border-purple-400/60">
+                      {isTrialActive ? `${trialDaysRemaining}d trial` : 'Premium'}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1888,27 +2168,59 @@ export default function Home() {
                 {/* design tabs */}
                 <div className="flex gap-2 border-b border-zinc-700 pb-2 mb-3">
                   {[
-                    { key: "FRAME", label: "Frames ✨" },
-                    { key: "SHAPE", label: "Shape" },
-                    { key: "LOGO", label: "Logo" },
+                    { key: "FRAME", label: "Frames ✨", premium: true },
+                    { key: "SHAPE", label: "Shape", premium: false },
+                    { key: "LOGO", label: "Logo", premium: false },
                   ].map((tab) => (
                     <button
                       key={tab.key}
-                      onClick={() => setDesignTab(tab.key as DesignTab)}
-                      className={`px-3 py-1.5 rounded-2xl text-[11px] md:text-xs font-medium ${
+                      onClick={() => {
+                        if (tab.premium && !canUseFeature('frames')) {
+                          router.push('/pricing');
+                          return;
+                        }
+                        setDesignTab(tab.key as DesignTab);
+                      }}
+                      className={`px-3 py-1.5 rounded-2xl text-[11px] md:text-xs font-medium relative ${
                         designTab === tab.key
                           ? "bg-lime-400 text-zinc-900"
                           : "bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
                       }`}
                     >
                       {tab.label}
+                      {tab.premium && !canUseFeature('frames') && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-purple-500 rounded-full"></span>
+                      )}
                     </button>
                   ))}
                 </div>
 
                 {/* frame tab */}
                 {designTab === "FRAME" && (
-                  <div className="space-y-3">
+                  <div className="space-y-3 relative">
+                    {/* Premium Overlay - only show if not loading and user doesn't have access */}
+                    {!planLoading && !canUseFeature('frames') && (
+                      <div className="absolute inset-0 bg-zinc-900/80 backdrop-blur-sm rounded-2xl z-10 flex flex-col items-center justify-center gap-3 p-6">
+                        <div className="text-center">
+                          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                          </div>
+                          <h3 className="text-white font-semibold mb-1">Premium Feature</h3>
+                          <p className="text-zinc-300 text-xs mb-3">
+                            Unlock beautiful frames with premium
+                          </p>
+                          <button
+                            onClick={() => router.push('/pricing')}
+                            className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-2 rounded-full text-sm font-semibold hover:from-purple-600 hover:to-pink-600 transition-all"
+                          >
+                            Upgrade Now
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
                     <p className="text-[11px] font-medium text-zinc-200 mb-1 flex items-center gap-2">
                       Frames
                       <span className="px-2 py-[2px] rounded-full text-[9px] bg-purple-500/20 text-purple-200 border border-purple-400/60">
@@ -1919,12 +2231,13 @@ export default function Home() {
                       {FRAME_PRESETS.map((preset) => (
                         <button
                           key={preset.id}
-                          onClick={() => setFrameStyle(preset.id)}
+                          onClick={() => canUseFeature('frames') && setFrameStyle(preset.id)}
+                          disabled={!canUseFeature('frames')}
                           className={`flex flex-col items-center gap-1 flex-shrink-0 px-1 pt-1 pb-2 rounded-2xl border ${
                             frameStyle === preset.id
                               ? "border-lime-400 bg-zinc-800/60"
                               : "border-zinc-700 bg-zinc-900/40 hover:bg-zinc-800/40"
-                          }`}
+                          } ${!canUseFeature('frames') ? 'opacity-50' : ''}`}
                         >
                           {renderFrameThumbnail(preset)}
                           <span className="text-[10px] text-zinc-200 mt-1">
@@ -2046,12 +2359,23 @@ export default function Home() {
             {/* right side preview */}
             <div className="w-full lg:w-[320px] xl:w-[340px] flex flex-col items-center gap-4">
               <div className="w-full flex flex-col items-start lg:items-end">
-                {!removeWatermarkEnabled && (
+                {!removeWatermarkEnabled && !canUseFeature('removeWatermark') && (
                   <p className="text-sm font-medium text-zinc-200">
-                    To enable tracking,{" "}
-                    <span className="underline decoration-dotted underline-offset-4">
-                      create a Dynamic QR Code
-                    </span>
+                    {isTrialActive ? (
+                      <>
+                        <span className="text-lime-400">🎉 Trial Active!</span> Upgrade to keep tracking enabled
+                      </>
+                    ) : (
+                      <>
+                        To enable tracking,{" "}
+                        <button 
+                          onClick={() => router.push('/pricing')}
+                          className="underline decoration-dotted underline-offset-4 hover:text-lime-400 transition-colors"
+                        >
+                          create a Dynamic QR Code
+                        </button>
+                      </>
+                    )}
                   </p>
                 )}
               </div>
@@ -2124,6 +2448,8 @@ export default function Home() {
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
       />
+      
+      <AddUrlModal />
     </div>
   );
 }

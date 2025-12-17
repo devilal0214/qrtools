@@ -36,7 +36,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </svg>
       )
     },
-    { href: '/admin/email', label: 'Email Users', icon: 'mail' }
+    { href: '/admin/email', label: 'Email Users', icon: 'mail' },
+    { href: '/admin/settings', label: 'Settings', icon: 'cog' }
   ];
 
   return (

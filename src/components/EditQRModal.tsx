@@ -15,6 +15,29 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
   const [title, setTitle] = useState(qrCode.title || '');
   const [error, setError] = useState('');
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAddUrlModal, setShowAddUrlModal] = useState(false);
+  
+  // Campaign tracking state
+  const [campaignEnabled, setCampaignEnabled] = useState(qrCode.campaign?.enabled || false);
+  const [campaignSource, setCampaignSource] = useState(qrCode.campaign?.utmSource || '');
+  const [campaignMedium, setCampaignMedium] = useState(qrCode.campaign?.utmMedium || '');
+  const [campaignName, setCampaignName] = useState(qrCode.campaign?.utmCampaign || '');
+  
+  // Multi-URL state
+  const [multiUrlData, setMultiUrlData] = useState(() => {
+    if (qrCode.type === ContentTypes.MULTI_URL) {
+      try {
+        const parsed = JSON.parse(qrCode.content);
+        return {
+          title: parsed.title || 'My Links',
+          urls: parsed.urls || [{url: '', title: ''}]
+        };
+      } catch {
+        return { title: 'My Links', urls: [{url: '', title: ''}] };
+      }
+    }
+    return null;
+  });
 
   // Initialize contact info from URL for contact type
   const [contactInfo, setContactInfo] = useState(() => {
@@ -71,7 +94,7 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
     return null;
   });
 
-  // Modified handleSubmit to handle contact updates
+  // Modified handleSubmit to handle contact and multi-URL updates
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -81,7 +104,14 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
       return;
     }
     try {
-      if (qrCode.type === ContentTypes.CONTACT) {
+      if (qrCode.type === ContentTypes.MULTI_URL) {
+        // Update multi-URL with new data
+        onUpdate({
+          ...qrCode,
+          title: multiUrlData.title,
+          content: JSON.stringify(multiUrlData)
+        });
+      } else if (qrCode.type === ContentTypes.CONTACT) {
         // Extract contact ID from URL
         const contactId = qrCode.content.split('/').pop();
         // Update contact data in Firestore
@@ -97,10 +127,20 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
         });
       } else {
         // Handle other content types as before
+        // Prepare campaign data for URL type
+        const campaignData = (qrCode.type === ContentTypes.URL && campaignEnabled) ? {
+          enabled: true,
+          utmSource: campaignSource,
+          utmMedium: campaignMedium,
+          utmCampaign: campaignName
+        } : undefined;
+
         onUpdate({
           ...qrCode,
           title,
-          content
+          content,
+          ...(campaignData && { campaign: campaignData }),
+          ...(qrCode.type === ContentTypes.URL && !campaignEnabled && { campaign: undefined })
         });
       }
       onClose();
@@ -110,6 +150,80 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
     }
   };
 
+  const AddUrlModalInEdit = () => {
+    const [newUrl, setNewUrl] = useState("");
+    const [newUrlTitle, setNewUrlTitle] = useState("");
+    
+    const handleAddUrl = () => {
+      if (newUrl.trim() && multiUrlData) {
+        setMultiUrlData({
+          ...multiUrlData,
+          urls: [...multiUrlData.urls.filter(u => u.url.trim()), { url: newUrl, title: newUrlTitle || newUrl }]
+        });
+        setNewUrl("");
+        setNewUrlTitle("");
+        setShowAddUrlModal(false);
+      }
+    };
+    
+    if (!showAddUrlModal) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
+        <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold text-gray-900">Add New Link</h3>
+            <button onClick={() => setShowAddUrlModal(false)} className="text-gray-500 hover:text-gray-700">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Link Title</label>
+              <input
+                type="text"
+                value={newUrlTitle}
+                onChange={(e) => setNewUrlTitle(e.target.value)}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="e.g., My Website"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
+              <input
+                type="url"
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="https://example.com"
+              />
+            </div>
+            
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowAddUrlModal(false)}
+                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddUrl}
+                disabled={!newUrl.trim()}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add Link
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderContentInput = () => {
     // Block all input if not logged in
     const inputProps = {
@@ -117,6 +231,63 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
       onFocus: () => { if (!user) setShowAuthModal(true); }
     };
     switch (qrCode.type) {
+      case ContentTypes.MULTI_URL:
+        return (
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-gray-500">Page Title</label>
+              <input
+                type="text"
+                value={multiUrlData?.title || ''}
+                onChange={(e) => setMultiUrlData({ ...multiUrlData, title: e.target.value, urls: multiUrlData?.urls || [] })}
+                className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                placeholder="Your title here"
+                disabled={!user || loading}
+                onFocus={() => { if (!user) setShowAuthModal(true); }}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-xs text-gray-500">Links ({multiUrlData?.urls.filter(u => u.url.trim()).length || 0})</label>
+              {multiUrlData?.urls.map((item, index) => {
+                if (!item.url.trim()) return null;
+                return (
+                  <div key={index} className="p-3 bg-gray-50 rounded-lg flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{item.title || 'Untitled'}</p>
+                      <p className="text-xs text-gray-500 truncate">{item.url}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const filtered = multiUrlData.urls.filter((_, i) => i !== index);
+                        setMultiUrlData({
+                          ...multiUrlData,
+                          urls: filtered.length ? filtered : [{url: '', title: ''}]
+                        });
+                      }}
+                      className="text-red-500 hover:text-red-700 text-xl leading-none"
+                      disabled={!user || loading}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <button
+              type="button"
+              onClick={() => setShowAddUrlModal(true)}
+              className="w-full py-2 px-4 text-sm text-green-600 hover:text-green-700 font-medium flex items-center justify-center gap-2 border border-dashed border-green-600 rounded-lg hover:bg-green-50"
+              disabled={!user || loading}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Link
+            </button>
+          </div>
+        );
       case ContentTypes.PLAIN_TEXT:
         return (
           <textarea
@@ -129,13 +300,90 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
         );
       case ContentTypes.URL:
         return (
-          <input
-            type="url"
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
-            {...inputProps}
-          />
+          <div className="space-y-4">
+            <input
+              type="url"
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+              {...inputProps}
+            />
+            
+            {/* Campaign URL Tracking */}
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">
+                    📊 Campaign URL Tracking
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Add UTM parameters to track this QR code
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={campaignEnabled}
+                    onChange={(e) => setCampaignEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
+              {campaignEnabled && (
+                <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Campaign Source (utm_source)
+                    </label>
+                    <input
+                      type="text"
+                      value={campaignSource}
+                      onChange={(e) => setCampaignSource(e.target.value)}
+                      placeholder="e.g., newsletter, facebook, poster"
+                      className="w-full border rounded px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Campaign Medium (utm_medium)
+                    </label>
+                    <input
+                      type="text"
+                      value={campaignMedium}
+                      onChange={(e) => setCampaignMedium(e.target.value)}
+                      placeholder="e.g., qr_code, email, social"
+                      className="w-full border rounded px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Campaign Name (utm_campaign)
+                    </label>
+                    <input
+                      type="text"
+                      value={campaignName}
+                      onChange={(e) => setCampaignName(e.target.value)}
+                      placeholder="e.g., summer_sale, product_launch"
+                      className="w-full border rounded px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  {campaignSource && campaignMedium && campaignName && (
+                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                      <p className="text-xs font-medium text-blue-900 mb-1">Preview URL:</p>
+                      <p className="text-xs font-mono text-blue-700 break-all">
+                        {content || 'https://example.com'}?utm_source={campaignSource}&utm_medium={campaignMedium}&utm_campaign={campaignName}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         );
       case ContentTypes.LOCATION:
         return (
@@ -311,6 +559,9 @@ export default function EditQRModal({ qrCode, onClose, onUpdate }) {
 
         {/* Auth Modal */}
         <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+        
+        {/* Add URL Modal for Multi-URL editing */}
+        <AddUrlModalInEdit />
       </div>
     </div>
   );

@@ -141,23 +141,88 @@ export default function Pricing() {
 
   const initiatePayment = async (plan) => {
     try {
+      setLoading(true);
+      setError('');
+
+      // Fetch enabled payment gateways
+      const gatewaysResponse = await fetch('/api/payments/get-enabled-gateways');
+      const { gateways } = await gatewaysResponse.json();
+
+      if (!gateways || gateways.length === 0) {
+        setError('No payment gateways are currently configured. Please contact support.');
+        setLoading(false);
+        return;
+      }
+
+      // Use the first enabled gateway (you can add gateway selection UI later)
+      const gateway = gateways[0].name;
+
       const response = await fetch('/api/payments/create-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           planId: plan.id,
           userId: user.uid,
-          successUrl: `${window.location.origin}/payment/success`,
-          cancelUrl: `${window.location.origin}/pricing`
+          gateway: gateway,
+          amount: plan.price,
+          currency: plan.currency || 'USD'
         })
       });
 
       const data = await response.json();
-      
-      // Redirect to payment page
-      window.location.href = data.url;
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create payment session');
+      }
+
+      const { session } = data;
+
+      // Handle different payment gateways
+      switch (gateway) {
+        case 'stripe':
+          const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+          if (session?.id) {
+            await stripe?.redirectToCheckout({ sessionId: session.id });
+          } else {
+            throw new Error('Invalid Stripe session');
+          }
+          break;
+
+        case 'paypal':
+          if (session?.links) {
+            const approvalUrl = session.links.find(link => link.rel === 'approve')?.href;
+            if (approvalUrl) {
+              window.location.href = approvalUrl;
+            } else {
+              throw new Error('PayPal approval URL not found');
+            }
+          }
+          break;
+
+        case 'razorpay':
+          const rzp = new (window as any).Razorpay({
+            key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+            ...session
+          });
+          rzp.open();
+          break;
+
+        case 'ccavenue':
+          if (session?.payment_url) {
+            window.location.href = session.payment_url;
+          } else {
+            throw new Error('CCAvenue payment URL not found');
+          }
+          break;
+
+        default:
+          throw new Error('Unsupported payment gateway');
+      }
     } catch (error) {
       console.error('Payment error:', error);
+      setError(error.message || 'Failed to process payment. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -307,7 +372,7 @@ export default function Pricing() {
                       : 'bg-blue-600 text-white hover:bg-blue-700 transition-colors'
                     }`}
                 >
-                  {currentPlanId === plan.id ? 'Current Plan' : 'Get Started'}
+                  {currentPlanId === plan.id ? 'Current Plan' : (user ? 'Upgrade' : 'Get Started')}
                 </Link>
               </div>
             ))}

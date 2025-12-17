@@ -54,6 +54,12 @@ interface QRCode {
     patternStyle?: PatternStyle;
     frameStyle?: FrameStyle;
   };
+  campaign?: {
+    enabled: boolean;
+    utmSource?: string;
+    utmMedium?: string;
+    utmCampaign?: string;
+  };
 }
 
 const truncateTitle = (title: string, maxLength: number = 30) => {
@@ -233,11 +239,16 @@ export default function ActiveCodes() {
   // File
   const [fileUrl, setFileUrl] = useState<string>("");
 
-  // Multi-URL
-  const [multiUrl1, setMultiUrl1] = useState<string>("");
-  const [multiUrl2, setMultiUrl2] = useState<string>("");
-  const [multiUrl3, setMultiUrl3] = useState<string>("");
-  const [multiUrl4, setMultiUrl4] = useState<string>("");
+  // Multi-URL with titles
+  const [multiUrls, setMultiUrls] = useState<Array<{url: string, title: string}>>([{url: "", title: ""}]);
+  const [multiUrlTitle, setMultiUrlTitle] = useState("My Links");
+  const [showAddUrlModal, setShowAddUrlModal] = useState(false);
+
+  // Campaign URL tracking
+  const [campaignEnabled, setCampaignEnabled] = useState(false);
+  const [campaignSource, setCampaignSource] = useState("");
+  const [campaignMedium, setCampaignMedium] = useState("");
+  const [campaignName, setCampaignName] = useState("");
 
   // Mode + design
   const [mode, setMode] = useState<"static" | "dynamic">("dynamic");
@@ -407,12 +418,7 @@ export default function ActiveCodes() {
       case "File":
         return fileUrl.trim().length > 0;
       case "Multi-URL":
-        return (
-          multiUrl1.trim().length > 0 ||
-          multiUrl2.trim().length > 0 ||
-          multiUrl3.trim().length > 0 ||
-          multiUrl4.trim().length > 0
-        );
+        return multiUrls.some(u => u.url.trim().length > 0);
       default:
         return false;
     }
@@ -518,13 +524,11 @@ export default function ActiveCodes() {
     if (selectedType === "File") return fileUrl.trim();
 
     if (selectedType === "Multi-URL") {
-      const urls = [
-        multiUrl1.trim(),
-        multiUrl2.trim(),
-        multiUrl3.trim(),
-        multiUrl4.trim(),
-      ].filter(Boolean);
-      return urls.join("\n");
+      const multiUrlData = {
+        title: multiUrlTitle || "My Links",
+        urls: multiUrls.filter(item => item.url.trim())
+      };
+      return JSON.stringify(multiUrlData);
     }
 
     return "";
@@ -561,10 +565,8 @@ export default function ActiveCodes() {
     setAppWebUrl("");
     setPdfUrl("");
     setFileUrl("");
-    setMultiUrl1("");
-    setMultiUrl2("");
-    setMultiUrl3("");
-    setMultiUrl4("");
+    setMultiUrls([{url: "", title: ""}]);
+    setMultiUrlTitle("My Links");
 
     setMode("dynamic");
     setFgColor("#000000");
@@ -597,6 +599,14 @@ export default function ActiveCodes() {
       setLoading(true);
       const now = new Date().toISOString();
 
+      // Prepare campaign data if enabled for URL type
+      const campaignData = (selectedType === "URL" && campaignEnabled) ? {
+        enabled: true,
+        utmSource: campaignSource,
+        utmMedium: campaignMedium,
+        utmCampaign: campaignName
+      } : undefined;
+
       const newDoc = await addDoc(collection(db, "qrcodes"), {
         userId: user.uid,
         title: qrTitle || `${selectedType} QR Code`,
@@ -617,6 +627,7 @@ export default function ActiveCodes() {
           frameStyle,
           patternStyle,
         },
+        ...(campaignData && { campaign: campaignData }),
       });
 
       const newQRCode: QRCode = {
@@ -897,20 +908,100 @@ export default function ActiveCodes() {
 
           {/* URL */}
           {selectedType === "URL" && (
-            <div className="mt-4">
-              <p className="text-sm font-semibold text-gray-800 mb-2">
-                Redirect to an existing web URL
-              </p>
-              <label className="block text-xs text-gray-500 mb-1">
-                Enter URL
-              </label>
-              <input
-                type="text"
-                value={urlValue}
-                onChange={(e) => setUrlValue(e.target.value)}
-                placeholder="https://example.com"
-                className="w-full border rounded-lg px-3 py-2 text-sm"
-              />
+            <div className="mt-4 space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-800 mb-2">
+                  Redirect to an existing web URL
+                </p>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Enter URL
+                </label>
+                <input
+                  type="text"
+                  value={urlValue}
+                  onChange={(e) => setUrlValue(e.target.value)}
+                  placeholder="https://example.com"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+
+              {/* Campaign URL Tracking */}
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      📊 Campaign URL Tracking
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Add UTM parameters to track this QR code in analytics
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={campaignEnabled}
+                      onChange={(e) => setCampaignEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {campaignEnabled && (
+                  <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Campaign Source (utm_source)
+                      </label>
+                      <input
+                        type="text"
+                        value={campaignSource}
+                        onChange={(e) => setCampaignSource(e.target.value)}
+                        placeholder="e.g., newsletter, facebook, poster"
+                        className="w-full border rounded px-3 py-2 text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Where the traffic comes from</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Campaign Medium (utm_medium)
+                      </label>
+                      <input
+                        type="text"
+                        value={campaignMedium}
+                        onChange={(e) => setCampaignMedium(e.target.value)}
+                        placeholder="e.g., qr_code, email, social"
+                        className="w-full border rounded px-3 py-2 text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">The marketing medium</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Campaign Name (utm_campaign)
+                      </label>
+                      <input
+                        type="text"
+                        value={campaignName}
+                        onChange={(e) => setCampaignName(e.target.value)}
+                        placeholder="e.g., summer_sale, product_launch"
+                        className="w-full border rounded px-3 py-2 text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">The specific campaign name</p>
+                    </div>
+
+                    {campaignSource && campaignMedium && campaignName && (
+                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                        <p className="text-xs font-medium text-blue-900 mb-1">Preview URL:</p>
+                        <p className="text-xs font-mono text-blue-700 break-all">
+                          {urlValue || 'https://example.com'}?utm_source={campaignSource}&utm_medium={campaignMedium}&utm_campaign={campaignName}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1312,40 +1403,57 @@ export default function ActiveCodes() {
           {selectedType === "Multi-URL" && (
             <div className="mt-4 space-y-3">
               <p className="text-sm font-semibold text-gray-800 mb-1">
-                Multiple links in one QR (shows as text list)
+                Multiple links with titles
               </p>
-              <div className="space-y-2">
+              
+              <div>
+                <label className="text-xs text-gray-500">Page Title</label>
                 <input
                   type="text"
-                  value={multiUrl1}
-                  onChange={(e) => setMultiUrl1(e.target.value)}
-                  placeholder="https://link1.com"
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  type="text"
-                  value={multiUrl2}
-                  onChange={(e) => setMultiUrl2(e.target.value)}
-                  placeholder="https://link2.com"
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  type="text"
-                  value={multiUrl3}
-                  onChange={(e) => setMultiUrl3(e.target.value)}
-                  placeholder="https://link3.com (optional)"
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  type="text"
-                  value={multiUrl4}
-                  onChange={(e) => setMultiUrl4(e.target.value)}
-                  placeholder="https://link4.com (optional)"
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={multiUrlTitle}
+                  onChange={(e) => setMultiUrlTitle(e.target.value)}
+                  placeholder="Your title here"
+                  className="w-full mt-1 border rounded-lg px-3 py-2 text-sm"
                 />
               </div>
+              
+              <div className="space-y-2">
+                <label className="text-xs text-gray-500">Links ({multiUrls.filter(u => u.url.trim()).length})</label>
+                {multiUrls.map((item, index) => {
+                  if (!item.url.trim()) return null;
+                  return (
+                    <div key={index} className="p-3 bg-gray-50 rounded-lg flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{item.title || 'Untitled'}</p>
+                        <p className="text-xs text-gray-500 truncate">{item.url}</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const copy = multiUrls.filter((_, i) => i !== index);
+                          setMultiUrls(copy.length ? copy : [{url: "", title: ""}]);
+                        }}
+                        className="text-red-500 hover:text-red-700 text-xl leading-none"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <button
+                type="button"
+                onClick={() => setShowAddUrlModal(true)}
+                className="w-full py-2 px-4 text-sm text-green-600 hover:text-green-700 font-medium flex items-center justify-center gap-2 border border-dashed border-green-600 rounded-lg hover:bg-green-50"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Link
+              </button>
+              
               <p className="text-[11px] text-gray-400">
-                When scanned, users will see all links in a text popup.
+                When scanned, users will see a landing page with all links.
               </p>
             </div>
           )}
@@ -1986,7 +2094,14 @@ export default function ActiveCodes() {
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {code.type}
+                            <div className="flex items-center gap-2">
+                              <span>{code.type}</span>
+                              {code.campaign?.enabled && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium" title="Campaign tracking enabled">
+                                  📊 UTM
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
                             <div className="truncate" title={code.content}>
@@ -2023,10 +2138,12 @@ export default function ActiveCodes() {
                                 <span>Pause</span>
                               </button>
                               <button
-                                onClick={() => setSelectedAnalyticsQR(code)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-emerald-900 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                                onClick={() => router.push(`/dashboard/qr-analytics/${code.id}`)}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
                               >
-                                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
                                 <span>Analytics</span>
                               </button>
                             </div>
@@ -2118,7 +2235,81 @@ export default function ActiveCodes() {
             onClose={() => setSelectedAnalyticsQR(null)}
           />
         )}
+
+        {/* Add URL Modal for Multi-URL */}
+        {showAddUrlModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-gray-900">Add New Link</h3>
+                <button onClick={() => setShowAddUrlModal(false)} className="text-gray-500 hover:text-gray-700">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <AddUrlModalContent />
+            </div>
+          </div>
+        )}
       </DashboardLayout>
     </AuthGuard>
   );
+
+  function AddUrlModalContent() {
+    const [newUrl, setNewUrl] = useState("");
+    const [newUrlTitle, setNewUrlTitle] = useState("");
+    
+    const handleAddUrl = () => {
+      if (newUrl.trim()) {
+        setMultiUrls([...multiUrls.filter(u => u.url.trim()), { url: newUrl, title: newUrlTitle || newUrl }]);
+        setNewUrl("");
+        setNewUrlTitle("");
+        setShowAddUrlModal(false);
+      }
+    };
+    
+    return (
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Link Title</label>
+          <input
+            type="text"
+            value={newUrlTitle}
+            onChange={(e) => setNewUrlTitle(e.target.value)}
+            className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="e.g., My Website"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
+          <input
+            type="url"
+            value={newUrl}
+            onChange={(e) => setNewUrl(e.target.value)}
+            className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="https://example.com"
+          />
+        </div>
+        
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={() => setShowAddUrlModal(false)}
+            className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleAddUrl}
+            disabled={!newUrl.trim()}
+            className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Add Link
+          </button>
+        </div>
+      </div>
+    );
+  }
 }

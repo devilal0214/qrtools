@@ -8,10 +8,9 @@ export const ContentTypes = {
   SMS: 'SMS',
   EMAIL: 'EMAIL',
   PHONE: 'PHONE',
-  // Hidden for now
-  // LOCATION: 'LOCATION',
-  // FILE: 'FILE',
-  // SOCIALS: 'SOCIALS'
+  LOCATION: 'LOCATION',
+  FILE: 'FILE',
+  SOCIALS: 'SOCIALS'
 } as const;
 
 export type ContentType = typeof ContentTypes[keyof typeof ContentTypes];
@@ -41,5 +40,11 @@ export interface QRCode {
     shape?: string;
     logoImage?: string | null;
     logoPreset?: string | null;
+  };
+  campaign?: {
+    enabled: boolean;
+    utmSource?: string;
+    utmMedium?: string;
+    utmCampaign?: string;
   };
 }

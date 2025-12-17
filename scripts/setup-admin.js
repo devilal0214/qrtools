@@ -1,37 +1,105 @@
-const fetch = require('node-fetch');
-const { initializeApp } = require('firebase/app');
-const { getAuth, createUserWithEmailAndPassword } = require('firebase/auth');
+#!/usr/bin/env node
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAlUIs8iJe9awyj9SoCx16tnh0wo1ZVhHw",
-  authDomain: "qr-code-generator-5f2a3.firebaseapp.com",
-  projectId: "qr-code-generator-5f2a3",
-  // ...rest of your config
-};
+/**
+ * Setup Admin User Script
+ * 
+ * This script sets the admin role for a user in Firestore.
+ * 
+ * Usage:
+ *   node scripts/setup-admin.js <email_or_uid>
+ * 
+ * Example:
+ *   node scripts/setup-admin.js admin@example.com
+ *   node scripts/setup-admin.js ABC123uid456
+ */
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+const admin = require('firebase-admin');
+const path = require('path');
 
-async function setupAdmin() {
+// Initialize Firebase Admin SDK
+const serviceAccount = require(path.join(__dirname, '..', 'serviceAccountKey.json'));
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+const db = admin.firestore();
+const auth = admin.auth();
+
+async function setupAdmin(emailOrUid) {
   try {
-    // Create admin user in Firebase Auth
-    await createUserWithEmailAndPassword(auth, 'admin@qrcode.com', 'admin123');
-    console.log('Admin user created in Firebase Auth');
+    let userId;
 
-    // Set admin claim
-    const response = await fetch('http://localhost:3000/api/admin/set-claim', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email: 'admin@qrcode.com' }),
-    });
+    // Check if input is email or UID
+    if (emailOrUid.includes('@')) {
+      // It's an email - get the user by email
+      console.log(`Looking up user by email: ${emailOrUid}`);
+      const userRecord = await auth.getUserByEmail(emailOrUid);
+      userId = userRecord.uid;
+      console.log(`Found user with UID: ${userId}`);
+    } else {
+      // It's a UID
+      userId = emailOrUid;
+      console.log(`Using provided UID: ${userId}`);
+      
+      // Verify user exists
+      await auth.getUser(userId);
+      console.log(`User verified in Firebase Auth`);
+    }
 
-    const data = await response.json();
-    console.log('Admin claim set:', data);
+    // Update or create user document in Firestore with admin role
+    const userRef = db.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (userDoc.exists) {
+      // Update existing document
+      await userRef.update({
+        role: 'admin',
+        isAdmin: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log(`✅ Updated existing user document with admin role`);
+    } else {
+      // Create new document
+      const user = await auth.getUser(userId);
+      await userRef.set({
+        email: user.email,
+        role: 'admin',
+        isAdmin: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log(`✅ Created new user document with admin role`);
+    }
+
+    console.log(`\n✅ SUCCESS! Admin setup completed for user: ${userId}`);
+    console.log(`\nYou can now:`);
+    console.log(`  1. Refresh your admin panel`);
+    console.log(`  2. Login with this user to access admin features\n`);
+
+    process.exit(0);
   } catch (error) {
-    console.error('Error setting up admin:', error);
+    console.error('\n❌ Error setting up admin:', error.message);
+    
+    if (error.code === 'auth/user-not-found') {
+      console.error('\nUser not found. Make sure the user is registered in Firebase Auth first.');
+    }
+    
+    process.exit(1);
   }
 }
 
-setupAdmin();
+// Get email or UID from command line arguments
+const emailOrUid = process.argv[2];
+
+if (!emailOrUid) {
+  console.error('\n❌ Error: No email or UID provided\n');
+  console.log('Usage: node scripts/setup-admin.js <email_or_uid>\n');
+  console.log('Examples:');
+  console.log('  node scripts/setup-admin.js admin@example.com');
+  console.log('  node scripts/setup-admin.js ABC123uid456\n');
+  process.exit(1);
+}
+
+console.log('\n🔧 Setting up admin user...\n');
+setupAdmin(emailOrUid);

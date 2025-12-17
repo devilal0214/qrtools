@@ -2,9 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: check if auth token has "admin" custom claim
+    // Helper: check if user is admin by checking both role and isAdmin fields
     function isAdmin() {
-      return request.auth != null && request.auth.token.admin == true;
+      return request.auth != null && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true
+      );
     }
 
     /**********************
@@ -39,6 +42,15 @@ service cloud.firestore {
       // Do not allow client updates/deletes
       allow update, delete: if false;
     }
+    
+    /**********************
+     * PUBLIC ANALYTICS (Sharable links)
+     **********************/
+    match /publicAnalytics/{qrId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
 
     /**********************
      * CONTACTS
@@ -49,8 +61,12 @@ service cloud.firestore {
       // Public read for contact view pages
       allow read: if true;
 
-      // Only owner can write
-      allow write: if request.auth != null &&
+      // Owner can update their contacts
+      allow update: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+
+      // Only owner can delete
+      allow delete: if request.auth != null &&
         resource.data.userId == request.auth.uid;
     }
 
@@ -104,20 +120,19 @@ service cloud.firestore {
      * PAYMENT GATEWAYS
      **********************/
     match /payment_gateways/{gatewayId} {
-      allow read: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
 
     /**********************
-     * GLOBAL SETTINGS
+     * GLOBAL SETTINGS (Updated for watermark, trial, email templates)
      **********************/
-    match /settings/global {
+    match /settings/{settingId} {
+      // Allow public read for watermark settings, trial config, etc.
       allow read: if true;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      
+      // Only admin can write settings
+      allow write: if isAdmin();
     }
 
     /**********************
@@ -125,11 +140,8 @@ service cloud.firestore {
      **********************/
     match /email_jobs/{jobId} {
       // Only admin can create/read/update jobs
-      allow create: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-
-      allow read, update: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow create: if isAdmin();
+      allow read, update: if isAdmin();
     }
 
     /**********************
@@ -161,8 +173,7 @@ service cloud.firestore {
      **********************/
     match /banners/{bannerId} {
       allow read: if true;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+      allow write: if isAdmin();
     }
 
     /**********************

@@ -50,6 +50,16 @@ interface LocationStat {
   count: number;
 }
 
+interface DeviceStat {
+  type: string;
+  count: number;
+}
+
+interface BrowserStat {
+  name: string;
+  count: number;
+}
+
 interface ScanAnalyticsModalProps {
   qrCode: QRCode;
   onClose: () => void;
@@ -63,6 +73,8 @@ export default function ScanAnalyticsModal({
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [locationStats, setLocationStats] = useState<LocationStat[]>([]);
+  const [deviceStats, setDeviceStats] = useState<DeviceStat[]>([]);
+  const [browserStats, setBrowserStats] = useState<BrowserStat[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<LocationStat | null>(
     null
   );
@@ -164,10 +176,35 @@ export default function ScanAnalyticsModal({
 
         setLocationStats(statsArray);
         setSelectedLocation(statsArray[0] || null);
+
+        // Process device stats
+        const deviceMap = new Map<string, number>();
+        records.forEach((rec) => {
+          const deviceType = rec.device?.type || 'Unknown';
+          deviceMap.set(deviceType, (deviceMap.get(deviceType) || 0) + 1);
+        });
+        setDeviceStats(
+          Array.from(deviceMap.entries())
+            .map(([type, count]) => ({ type, count }))
+            .sort((a, b) => b.count - a.count)
+        );
+
+        // Process browser stats
+        const browserMap = new Map<string, number>();
+        records.forEach((rec) => {
+          const browserName = rec.browser?.name || 'Unknown';
+          browserMap.set(browserName, (browserMap.get(browserName) || 0) + 1);
+        });
+        setBrowserStats(
+          Array.from(browserMap.entries())
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+        );
+
+        setLoading(false);
       } catch (err: any) {
-        console.error("Error fetching scan analytics:", err);
-        setErrorMessage(err?.message || String(err));
-      } finally {
+        console.error("Fetch scans error:", err);
+        setErrorMessage("Failed to load scan analytics.");
         setLoading(false);
       }
     };
@@ -177,52 +214,58 @@ export default function ScanAnalyticsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full mx-4 max-h-[82vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-2xl shadow-xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b flex items-center justify-between">
+        <div className="px-6 py-4 border-b flex items-center justify-between bg-gradient-to-r from-blue-50 to-purple-50">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">
-              Scan Analytics
+            <h3 className="text-xl font-bold text-gray-900">
+              📊 Scan Analytics
             </h3>
-            <p className="text-xs text-gray-500 mt-1">
-              QR:{" "}
-              <span className="font-medium">{qrCode.title || "Untitled"}</span>{" "}
-              · ID: <span className="font-mono text-gray-600">{qrCode.id}</span>
+            <p className="text-sm text-gray-600 mt-1">
+              <span className="font-semibold">{qrCode.title || "Untitled"}</span>
+              {" · "}
+              <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{qrCode.id}</span>
             </p>
           </div>
 
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm rounded-lg bg-gray-100 hover:bg-gray-200"
-          >
-            Close
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={generateShareLink}
+              disabled={shareLoading}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+              {shareLoading ? "Generating..." : "Share"}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
-        {/* Share section */}
-        <div className="px-6 pt-4 pb-3 border-b bg-gray-50">
-          <button
-            onClick={generateShareLink}
-            disabled={shareLoading}
-            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60"
-          >
-            {shareLoading ? "Generating link…" : "Share analytics"}
-          </button>
-
-          {publicUrl && (
-            <div className="mt-3 text-xs bg-white border border-gray-200 rounded-lg p-3">
-              <p className="text-[11px] text-gray-500 mb-1">
-                Public share link:
-              </p>
-              <p className="font-mono break-all text-gray-800">{publicUrl}</p>
-              <p className="text-green-600 mt-1">
-                {copied
-                  ? "Copied to clipboard!"
-                  : "Copy & send this link to your client."}
-              </p>
+        {/* Share Link Display */}
+        {publicUrl && (
+          <div className="px-6 py-3 bg-green-50 border-b border-green-100">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-green-900 mb-1">
+                  {copied ? "✓ Link copied to clipboard!" : "Share this link with anyone"}
+                </p>
+                <p className="font-mono text-xs bg-white border border-green-200 rounded px-3 py-2 break-all text-gray-700">
+                  {publicUrl}
+                </p>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Main content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -236,45 +279,51 @@ export default function ScanAnalyticsModal({
             </p>
           ) : scans.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-6">
-              No scans recorded yet for this QR code.
+              No scans recorded yet.
             </p>
           ) : (
             <>
               {/* Top stats */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="border rounded-xl p-4">
-                  <p className="text-xs text-gray-500">Total scans</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="border rounded-xl p-4 bg-gradient-to-br from-blue-50 to-blue-100">
+                  <p className="text-xs font-medium text-blue-700 uppercase tracking-wide">Total Scans</p>
+                  <p className="text-3xl font-bold text-blue-900 mt-2">
                     {qrCode.scans ?? scans.length}
                   </p>
                 </div>
-                <div className="border rounded-xl p-4">
-                  <p className="text-xs text-gray-500">Unique locations</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">
+                <div className="border rounded-xl p-4 bg-gradient-to-br from-purple-50 to-purple-100">
+                  <p className="text-xs font-medium text-purple-700 uppercase tracking-wide">Unique Locations</p>
+                  <p className="text-3xl font-bold text-purple-900 mt-2">
                     {locationStats.length}
                   </p>
                 </div>
-                <div className="border rounded-xl p-4">
-                  <p className="text-xs text-gray-500">Most active location</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">
-                    {locationStats[0]?.key || "—"}
+                <div className="border rounded-xl p-4 bg-gradient-to-br from-green-50 to-green-100">
+                  <p className="text-xs font-medium text-green-700 uppercase tracking-wide">Device Types</p>
+                  <p className="text-3xl font-bold text-green-900 mt-2">
+                    {deviceStats.length}
+                  </p>
+                </div>
+                <div className="border rounded-xl p-4 bg-gradient-to-br from-orange-50 to-orange-100">
+                  <p className="text-xs font-medium text-orange-700 uppercase tracking-wide">Most Active</p>
+                  <p className="text-sm font-bold text-orange-900 mt-2 truncate" title={locationStats[0]?.key}>
+                    {locationStats[0]?.city || "—"}
                   </p>
                   {locationStats[0] && (
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-orange-700 mt-1">
                       {locationStats[0].count} scans
                     </p>
                   )}
                 </div>
               </div>
 
-              {/* Locations + details */}
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Left: locations */}
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-800 mb-3">
-                    Scans by location
-                  </h4>
-                  <div className="border rounded-xl max-h-64 overflow-y-auto">
+              {/* Main Grid - 2 columns */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Locations */}
+                <div className="border rounded-xl overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b">
+                    <h4 className="text-sm font-semibold text-gray-900">📍 Scans by Location</h4>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
                     <table className="min-w-full text-sm">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
@@ -284,6 +333,9 @@ export default function ScanAnalyticsModal({
                           <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
                             Scans
                           </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            %
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -291,7 +343,7 @@ export default function ScanAnalyticsModal({
                           <tr
                             key={loc.key}
                             onClick={() => setSelectedLocation(loc)}
-                            className={`cursor-pointer hover:bg-gray-50 ${
+                            className={`cursor-pointer hover:bg-blue-50 ${
                               selectedLocation?.key === loc.key
                                 ? "bg-blue-50"
                                 : ""
@@ -303,6 +355,9 @@ export default function ScanAnalyticsModal({
                             <td className="px-4 py-2 text-right font-semibold text-gray-900">
                               {loc.count}
                             </td>
+                            <td className="px-4 py-2 text-right text-gray-500">
+                              {((loc.count / scans.length) * 100).toFixed(1)}%
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -310,15 +365,97 @@ export default function ScanAnalyticsModal({
                   </div>
                 </div>
 
-                {/* Right: individual scans */}
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-800 mb-3">
-                    Scans in{" "}
-                    <span className="text-blue-600">
-                      {selectedLocation?.key || "all locations"}
-                    </span>
-                  </h4>
-                  <div className="border rounded-xl max-h-64 overflow-y-auto">
+                {/* Devices */}
+                <div className="border rounded-xl overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b">
+                    <h4 className="text-sm font-semibold text-gray-900">📱 Scans by Device</h4>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                            Device Type
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Scans
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            %
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {deviceStats.map((device) => (
+                          <tr key={device.type}>
+                            <td className="px-4 py-2 text-gray-800 capitalize">
+                              {device.type}
+                            </td>
+                            <td className="px-4 py-2 text-right font-semibold text-gray-900">
+                              {device.count}
+                            </td>
+                            <td className="px-4 py-2 text-right text-gray-500">
+                              {((device.count / scans.length) * 100).toFixed(1)}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Browsers */}
+                <div className="border rounded-xl overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b">
+                    <h4 className="text-sm font-semibold text-gray-900">🌐 Scans by Browser</h4>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                            Browser
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Scans
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            %
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {browserStats.map((browser) => (
+                          <tr key={browser.name}>
+                            <td className="px-4 py-2 text-gray-800">
+                              {browser.name}
+                            </td>
+                            <td className="px-4 py-2 text-right font-semibold text-gray-900">
+                              {browser.count}
+                            </td>
+                            <td className="px-4 py-2 text-right text-gray-500">
+                              {((browser.count / scans.length) * 100).toFixed(1)}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Recent Scans */}
+                <div className="border rounded-xl overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b">
+                    <h4 className="text-sm font-semibold text-gray-900">
+                      🕒 Recent Scans
+                      {selectedLocation && (
+                        <span className="text-xs font-normal text-gray-500 ml-2">
+                          in {selectedLocation.city}
+                        </span>
+                      )}
+                    </h4>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
                     <table className="min-w-full text-xs">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
@@ -326,13 +463,10 @@ export default function ScanAnalyticsModal({
                             Time
                           </th>
                           <th className="px-3 py-2 text-left text-[11px] font-medium text-gray-500 uppercase">
-                            IP
+                            Device
                           </th>
                           <th className="px-3 py-2 text-left text-[11px] font-medium text-gray-500 uppercase">
                             Browser
-                          </th>
-                          <th className="px-3 py-2 text-left text-[11px] font-medium text-gray-500 uppercase">
-                            Device
                           </th>
                         </tr>
                       </thead>
@@ -349,24 +483,19 @@ export default function ScanAnalyticsModal({
                             }`;
                             return key === selectedLocation.key;
                           })
+                          .slice(0, 50)
                           .map((rec) => (
                             <tr key={rec.id}>
-                              <td className="px-3 py-2">
+                              <td className="px-3 py-2 text-gray-700">
                                 {rec.timestamp
                                   ? new Date(rec.timestamp).toLocaleString()
                                   : "—"}
                               </td>
-                              <td className="px-3 py-2 font-mono text-[11px]">
-                                {rec.ipInfo?.ip || "—"}
-                              </td>
-                              <td className="px-3 py-2">
-                                {rec.browser?.name || "—"}{" "}
-                                {rec.browser?.version
-                                  ? `(${rec.browser.version})`
-                                  : ""}
-                              </td>
-                              <td className="px-3 py-2">
+                              <td className="px-3 py-2 text-gray-700 capitalize">
                                 {rec.device?.type || "—"}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {rec.browser?.name || "—"}
                               </td>
                             </tr>
                           ))}

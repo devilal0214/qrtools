@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import { auth, db } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
 import { usePlanFeatures } from "@/hooks/usePlanFeatures";
+import TrialBanner from "./TrialBanner";
 
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 
@@ -71,12 +72,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Top red trial bar (like in screenshot) */}
-      <div className="w-full bg-red-500 text-[15px] text-white text-center py-1">
-        Your 14-day free trial has ended. Upgrade your account to enjoy the full
-        benefits of JV QR Code Generator.
-      </div>
-
       <div className="flex flex-1">
         {/* Sidebar */}
         <aside
@@ -406,6 +401,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               )}
             </div>
           </header>
+
+          {/* Trial Banner */}
+          <TrialBanner />
 
           {/* Page content */}
           <main className="flex-1 overflow-x-hidden overflow-y-auto p-6">

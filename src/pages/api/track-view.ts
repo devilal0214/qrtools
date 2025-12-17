@@ -191,6 +191,21 @@ export default async function handler(
     // 3. Approx location from IP
     const geo = await getGeoFromIP(ipHeader);
 
+    // 3.5 Check for browser-based GPS coordinates
+    let gpsInfo = null;
+    if (browserGeo && browserGeo.latitude && browserGeo.longitude) {
+      gpsInfo = {
+        latitude: browserGeo.latitude,
+        longitude: browserGeo.longitude,
+        city: browserGeo.city || null,
+        region: browserGeo.region || null,
+        country: browserGeo.country || null,
+        accuracy: browserGeo.accuracy || null,
+        source: "gps"
+      };
+      console.log("[track-view] GPS data received:", gpsInfo);
+    }
+
     // 4. Add scan record in "scans" collection
     const scanData = {
       qrId,
@@ -200,6 +215,7 @@ export default async function handler(
       os: osInfo,
       device: deviceInfo,
       ipInfo: geo,
+      gpsInfo: gpsInfo,
       referrer: (req.headers.referer as string) || null,
     };
     

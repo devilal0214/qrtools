@@ -4,6 +4,7 @@ import AdminLayout from '@/components/AdminLayout';
 import Head from 'next/head';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import ScanAnalyticsModal from '@/components/ScanAnalyticsModal';
 
 interface QRCode {
   id: string;
@@ -24,6 +25,8 @@ export default function UserQRCodes() {
   const [error, setError] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
+  const [selectedQRCode, setSelectedQRCode] = useState<QRCode | null>(null);
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -116,8 +119,7 @@ export default function UserQRCodes() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Scans</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -140,6 +142,23 @@ export default function UserQRCodes() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{qr.scans}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {new Date(qr.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <button
+                        onClick={() => {
+                          setSelectedQRCode(qr);
+                          setShowAnalyticsModal(true);
+                        }}
+                        className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                        title="View Analytics"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        Analytics
+                      </button>>{qr.scans}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {new Date(qr.createdAt).toLocaleDateString()}
                     </td>
@@ -194,6 +213,17 @@ export default function UserQRCodes() {
           </div>
         )}
       </div>
+
+      {/* Analytics Modal */}
+      {showAnalyticsModal && selectedQRCode && (
+        <ScanAnalyticsModal
+          qrCode={selectedQRCode}
+          onClose={() => {
+            setShowAnalyticsModal(false);
+            setSelectedQRCode(null);
+          }}
+        />
+      )}
     </AdminLayout>
   );
 }

@@ -4,16 +4,6 @@ import Stripe from 'stripe';
 import Razorpay from 'razorpay';
 import { createCCAvenueSession } from '@/lib/ccavenue';
 
-// Initialize payment gateways
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16' as Stripe.LatestApiVersion
-});
-
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID!,
-  key_secret: process.env.RAZORPAY_KEY_SECRET!
-});
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -21,6 +11,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const { gateway, planId, userId, amount, currency = 'USD' } = req.body;
+
+    // Fetch gateway credentials from Firestore
+    const gatewayDoc = await adminDb.collection('payment_gateways').doc(gateway).get();
+    
+    if (!gatewayDoc.exists || !gatewayDoc.data()?.isActive) {
+      return res.status(400).json({ error: 'Payment gateway is not active or configured' });
+    }
+
+    const gatewayData = gatewayDoc.data();
+    const credentials = gatewayData?.credentials || {};
 
     let session;
     const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -38,6 +38,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     switch (gateway) {
       case 'stripe':
+        if (!credentials.secretKey) {
+          return res.status(400).json({ error: 'Stripe credentials not configured' });
+        }
+        
+        const stripe = new Stripe(credentials.secretKey, {
+          apiVersion: '2023-10-16' as Stripe.LatestApiVersion
+        });
+
         session = await stripe.checkout.sessions.create({
           payment_method_types: ['card'],
           line_items: [{
@@ -51,8 +59,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             quantity: 1,
           }],
           mode: 'payment',
-          success_url: `${req.headers.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${req.headers.origin}/payment/cancel`,
+          success_url: `${req.headers.origin}/payment/success?session_id={CHECKOUT_SESSION_ID}&orderId=${orderId}`,
+          cancel_url: `${req.headers.origin}/pricing`,
           metadata: {
             orderId,
             userId,
@@ -62,9 +70,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         break;
 
       case 'razorpay':
+        if (!credentials.keyId || !credentials.keySecret) {
+          return res.status(400).json({ error: 'Razorpay credentials not configured' });
+        }
+
+        const razorpay = new Razorpay({
+          key_id: credentials.keyId,
+          key_secret: credentials.keySecret
+        });
+
         session = await razorpay.orders.create({
           amount: amount * 100,
-          currency,
+          currency: currency === 'USD' ? 'INR' : currency, // Razorpay primarily uses INR
           receipt: orderId,
           notes: {
             userId,
@@ -73,26 +90,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
         break;
 
+      case 'paypal':
+        if (!credentials.clientId || !credentials.clientSecret) {
+          return res.status(400).json({ error: 'PayPal credentials not configured' });
+        }
+        
+        // PayPal integration
+        const paypalAuth = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString('base64');
+        const paypalResponse = await fetch(`https://api${gatewayData.sandboxMode ? '-m.sandbox' : ''}.paypal.com/v2/checkout/orders`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${paypalAuth}`
+          },
+          body: JSON.stringify({
+            intent: 'CAPTURE',
+            purchase_units: [{
+              amount: {
+                currency_code: currency,
+                value: amount.toString()
+              },
+              reference_id: orderId
+            }],
+            application_context: {
+              return_url: `${req.headers.origin}/payment/success?orderId=${orderId}`,
+              cancel_url: `${req.headers.origin}/pricing`
+            }
+          })
+        });
+
+        session = await paypalResponse.json();
+        break;
+
       case 'ccavenue':
+        if (!credentials.merchantId || !credentials.accessCode || !credentials.workingKey) {
+          return res.status(400).json({ error: 'CCAvenue credentials not configured' });
+        }
+
         const ccavenueSession = await createCCAvenueSession({
           orderId,
           amount,
           currency,
           userId,
           planId,
-          redirectUrl: `${req.headers.origin}/payment/success`, // Changed from successUrl
-          cancelUrl: `${req.headers.origin}/payment/cancel`
+          redirectUrl: `${req.headers.origin}/payment/success`,
+          cancelUrl: `${req.headers.origin}/pricing`
         });
         session = ccavenueSession;
         break;
 
       default:
-        throw new Error('Invalid payment gateway');
+        return res.status(400).json({ error: 'Invalid payment gateway' });
     }
 
     res.status(200).json({ session });
   } catch (error: any) {
     console.error('Payment session creation error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to create payment session' });
   }
 }

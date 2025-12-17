@@ -11,26 +11,8 @@ import { usePlanFeatures } from '@/hooks/usePlanFeatures';
 export default function Analytics() {
   const { user } = useAuth();
   const { canUseFeature } = usePlanFeatures();
-
-  if (!canUseFeature('analytics')) {
-    return (
-      <DashboardLayout>
-        <div className="text-center py-12">
-          <h2 className="text-2xl font-bold text-gray-900">Analytics Feature Not Available</h2>
-          <p className="mt-2 text-gray-600">
-            Analytics is only available on premium plans.
-          </p>
-          <Link
-            href="/pricing"
-            className="mt-4 inline-block bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-          >
-            Upgrade Plan
-          </Link>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
+  
+  // All hooks must be called before any conditional returns
   const [stats, setStats] = useState({
     totalScans: 0,
     activeQRs: 0,
@@ -80,6 +62,26 @@ export default function Analytics() {
 
     fetchStats();
   }, [user]);
+
+  // Conditional rendering after all hooks
+  if (!canUseFeature('analytics')) {
+    return (
+      <DashboardLayout>
+        <div className="text-center py-12">
+          <h2 className="text-2xl font-bold text-gray-900">Analytics Feature Not Available</h2>
+          <p className="mt-2 text-gray-600">
+            Analytics is only available on premium plans.
+          </p>
+          <Link
+            href="/pricing"
+            className="mt-4 inline-block bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            Upgrade Plan
+          </Link>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <AuthGuard>

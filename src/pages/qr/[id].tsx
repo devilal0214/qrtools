@@ -17,6 +17,55 @@ interface QRDoc {
   };
 }
 
+interface CampaignSettings {
+  enabled: boolean;
+  utmSource: string;
+  utmMedium: string;
+  utmCampaign: string;
+}
+
+/**
+ * Append campaign UTM parameters to URL
+ */
+function appendCampaignParams(url: string, campaignSettings: CampaignSettings): string {
+  if (!campaignSettings.enabled) {
+    return url;
+  }
+
+  try {
+    const urlObj = new URL(url);
+    
+    // Add UTM parameters
+    if (campaignSettings.utmSource) {
+      urlObj.searchParams.set('utm_source', campaignSettings.utmSource);
+    }
+    if (campaignSettings.utmMedium) {
+      urlObj.searchParams.set('utm_medium', campaignSettings.utmMedium);
+    }
+    if (campaignSettings.utmCampaign) {
+      urlObj.searchParams.set('utm_campaign', campaignSettings.utmCampaign);
+    }
+    
+    return urlObj.toString();
+  } catch (error) {
+    // If URL is invalid, return as-is
+    console.error('Invalid URL for campaign tracking:', error);
+    return url;
+  }
+}
+
+interface QRDoc {
+  type: string;
+  content: string;
+  isActive?: boolean;
+  settings?: {
+    size?: number;
+    fgColor?: string;
+    bgColor?: string;
+    shape?: "square" | "rounded" | "dots";
+  };
+}
+
 export default function QRPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -32,7 +81,25 @@ export default function QRPage() {
 
     const handleQR = async () => {
       try {
-        // Keep loading state visible initially
+        // Fetch campaign settings
+        let campaignSettings: CampaignSettings = {
+          enabled: false,
+          utmSource: '',
+          utmMedium: '',
+          utmCampaign: ''
+        };
+
+        try {
+          const settingsDoc = await getDoc(doc(db, 'settings', 'config'));
+          if (settingsDoc.exists()) {
+            const data = settingsDoc.data();
+            if (data.campaignUrls) {
+              campaignSettings = data.campaignUrls;
+            }
+          }
+        } catch (err) {
+          console.log('Campaign settings not available:', err);
+        }
         
         const ref = doc(db, "qrcodes", id as string);
         const snap = await getDoc(ref);
@@ -51,42 +118,92 @@ export default function QRPage() {
           return;
         }
 
+        // Override campaign settings if QR code has its own campaign data
+        if (data.campaign && data.campaign.enabled) {
+          campaignSettings = {
+            enabled: true,
+            utmSource: data.campaign.utmSource || '',
+            utmMedium: data.campaign.utmMedium || '',
+            utmCampaign: data.campaign.utmCampaign || ''
+          };
+        }
+
         const type = (data.type || "").toUpperCase();
         const content = data.content || "";
 
         // ---------- shared redirect helper ----------
         const redirectTo = (url: string) => {
+          // Append campaign parameters if enabled
+          const finalUrl = appendCampaignParams(url, campaignSettings);
           // Track detailed view (IP, browser, etc) via API using sendBeacon for instant redirect
-          const trackPayload = JSON.stringify({ qrId: id });
+          
+          // Try to get GPS coordinates if available
+          const trackWithGPS = async () => {
+            let trackPayload: any = { qrId: id };
+            
+            // Check if GPS tracking is enabled - we'll try to get coordinates
+            if (typeof navigator !== "undefined" && "geolocation" in navigator) {
+              try {
+                // Use Promise with timeout to avoid hanging
+                const position = await Promise.race([
+                  new Promise<GeolocationPosition>((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                      timeout: 3000,
+                      maximumAge: 60000,
+                      enableHighAccuracy: false
+                    });
+                  }),
+                  new Promise<null>((_, reject) => 
+                    setTimeout(() => reject(new Error('GPS timeout')), 3000)
+                  )
+                ]);
 
-          // Fire tracking request without blocking redirect
-          try {
-            if (
-              typeof window !== "undefined" &&
-              (navigator as any).sendBeacon
-            ) {
-              const blob = new Blob([trackPayload], {
-                type: "application/json",
-              });
-              (navigator as any).sendBeacon("/api/track-view", blob);
-            } else {
-              fetch("/api/track-view", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: trackPayload,
-                keepalive: true,
-              }).catch(() => {});
+                if (position && 'coords' in position) {
+                  trackPayload.browserGeo = {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                  };
+                  console.log("[QR Scan] GPS coordinates collected:", trackPayload.browserGeo);
+                }
+              } catch (gpsError) {
+                // GPS collection failed or timed out - continue without GPS data
+                console.log("[QR Scan] GPS not available:", gpsError);
+              }
             }
-          } catch (e) {
-            // tracking failure is non-fatal for redirect
-            console.error("Error firing track-view:", e);
-          }
+
+            // Fire tracking request without blocking redirect
+            try {
+              if (
+                typeof window !== "undefined" &&
+                (navigator as any).sendBeacon
+              ) {
+                const blob = new Blob([JSON.stringify(trackPayload)], {
+                  type: "application/json",
+                });
+                (navigator as any).sendBeacon("/api/track-view", blob);
+              } else {
+                fetch("/api/track-view", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(trackPayload),
+                  keepalive: true,
+                }).catch(() => {});
+              }
+            } catch (e) {
+              // tracking failure is non-fatal for redirect
+              console.error("Error firing track-view:", e);
+            }
+          };
+
+          // Start tracking (async, non-blocking)
+          trackWithGPS();
           
           // Immediate redirect using multiple methods for maximum compatibility
           setTimeout(() => {
-            window.location.replace(url);
+            window.location.replace(finalUrl);
           }, 0);
-          window.location.href = url;
+          window.location.href = finalUrl;
         };
 
         // ---------- SOCIALS ----------
@@ -114,10 +231,22 @@ export default function QRPage() {
 
         // ---------- MULTI_URL ----------
         if (type === "MULTI_URL") {
-          const urlList = content
-            .split("\n")
-            .map((u) => u.trim())
-            .filter(Boolean);
+          let urlList: string[] = [];
+          let pageTitle = "My Links";
+          
+          try {
+            const parsed = JSON.parse(content);
+            if (parsed.urls && Array.isArray(parsed.urls)) {
+              urlList = parsed.urls.map((item: any) => item.url).filter(Boolean);
+              pageTitle = parsed.title || "My Links";
+            } else {
+              // Fallback for old format
+              urlList = content.split("\n").map((u) => u.trim()).filter(Boolean);
+            }
+          } catch {
+            // Fallback for old format
+            urlList = content.split("\n").map((u) => u.trim()).filter(Boolean);
+          }
 
           if (urlList.length === 0) {
             setStatus("error");
@@ -256,69 +385,65 @@ export default function QRPage() {
   // ================== MULTI_URL VIEWER (WITH QR) ==================
 
   if (qrCode && qrCode.type === "MULTI_URL" && urls.length > 1) {
-    const size = qrCode.settings?.size || 256;
-    const fgColor = qrCode.settings?.fgColor || "#000000";
-    const bgColor = qrCode.settings?.bgColor || "#FFFFFF";
-    const shape = qrCode.settings?.shape;
+    let parsedData: { title: string; urls: Array<{ url: string; title: string }> } = {
+      title: "My Links",
+      urls: urls.map(url => ({ url, title: url }))
+    };
+    
+    try {
+      const parsed = JSON.parse(qrCode.content);
+      if (parsed.title && parsed.urls) {
+        parsedData = parsed;
+      }
+    } catch {
+      // Use default
+    }
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-lg max-w-4xl w-full space-y-8">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold">Multiple QR Codes</h2>
-            <div className="flex gap-2 items-center">
-              <button
-                onClick={() =>
-                  setCurrentUrlIndex((prev) => Math.max(0, prev - 1))
-                }
-                disabled={currentUrlIndex === 0}
-                className="px-3 py-1 rounded-lg bg-gray-100 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <span className="px-3 py-1 text-sm text-gray-600">
-                {currentUrlIndex + 1} / {urls.length}
-              </span>
-              <button
-                onClick={() =>
-                  setCurrentUrlIndex((prev) =>
-                    Math.min(urls.length - 1, prev + 1)
-                  )
-                }
-                disabled={currentUrlIndex === urls.length - 1}
-                className="px-3 py-1 rounded-lg bg-gray-100 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+        <Head>
+          <title>{parsedData.title}</title>
+        </Head>
+        <div className="max-w-2xl mx-auto pt-8 pb-16">
+          {/* Header with Title */}
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">{parsedData.title}</h1>
+            <p className="text-gray-600 text-sm">Click any link below to visit</p>
           </div>
 
-          <div className="flex justify-center">
-            <QRCode
-              value={urls[currentUrlIndex]}
-              size={size}
-              fgColor={fgColor}
-              bgColor={bgColor}
-              level="H"
-              className={`
-                ${shape === "rounded" ? "rounded-2xl" : ""}
-                ${shape === "dots" ? "rounded-full" : ""}
-              `}
-            />
+          {/* Links Grid */}
+          <div className="space-y-3">
+            {parsedData.urls.map((item, index) => (
+              <a
+                key={index}
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 hover:border-blue-300 group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0 mr-4">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
+                      {item.title}
+                    </h3>
+                    <p className="text-sm text-gray-500 truncate">{item.url}</p>
+                  </div>
+                  <svg 
+                    className="w-6 h-6 text-gray-400 group-hover:text-blue-600 transition-colors flex-shrink-0" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </a>
+            ))}
           </div>
 
-          <div className="space-y-2 text-center">
-            <p className="text-sm text-gray-500 break-all">
-              {urls[currentUrlIndex]}
-            </p>
-            <a
-              href={urls[currentUrlIndex]}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block mt-2 text-sm text-blue-600 hover:underline"
-            >
-              Open this link
-            </a>
+          {/* Footer */}
+          <div className="text-center mt-12">
+            <p className="text-xs text-gray-400">Powered by QR Tools</p>
           </div>
         </div>
       </div>
