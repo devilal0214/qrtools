@@ -15,6 +15,12 @@ interface QRDoc {
     bgColor?: string;
     shape?: "square" | "rounded" | "dots";
   };
+  campaign?: {
+    enabled: boolean;
+    utmSource?: string;
+    utmMedium?: string;
+    utmCampaign?: string;
+  };
 }
 
 interface CampaignSettings {
@@ -52,18 +58,6 @@ function appendCampaignParams(url: string, campaignSettings: CampaignSettings): 
     console.error('Invalid URL for campaign tracking:', error);
     return url;
   }
-}
-
-interface QRDoc {
-  type: string;
-  content: string;
-  isActive?: boolean;
-  settings?: {
-    size?: number;
-    fgColor?: string;
-    bgColor?: string;
-    shape?: "square" | "rounded" | "dots";
-  };
 }
 
 export default function QRPage() {
