@@ -4,7 +4,6 @@ import AdminLayout from '@/components/AdminLayout';
 import Head from 'next/head';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import ScanAnalyticsModal from '@/components/ScanAnalyticsModal';
 
 interface QRCode {
   id: string;
@@ -25,8 +24,6 @@ export default function UserQRCodes() {
   const [error, setError] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
-  const [selectedQRCode, setSelectedQRCode] = useState<QRCode | null>(null);
-  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -147,10 +144,7 @@ export default function UserQRCodes() {
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <button
-                        onClick={() => {
-                          setSelectedQRCode(qr);
-                          setShowAnalyticsModal(true);
-                        }}
+                        onClick={() => router.push(`/dashboard/qr-analytics/${qr.id}`)}
                         className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
                         title="View Analytics"
                       >
@@ -213,17 +207,6 @@ export default function UserQRCodes() {
           </div>
         )}
       </div>
-
-      {/* Analytics Modal */}
-      {showAnalyticsModal && selectedQRCode && (
-        <ScanAnalyticsModal
-          qrCode={selectedQRCode}
-          onClose={() => {
-            setShowAnalyticsModal(false);
-            setSelectedQRCode(null);
-          }}
-        />
-      )}
     </AdminLayout>
   );
 }

@@ -77,8 +77,11 @@ export default function QRAnalyticsPage() {
 
         const qrData = qrSnap.data();
 
-        // Verify ownership
-        if (qrData.userId !== user.uid) {
+        // Check if user is admin (has admin cookies)
+        const isAdmin = document.cookie.includes('is-admin=true') || document.cookie.includes('admin-token=');
+
+        // Verify ownership (or admin access)
+        if (qrData.userId !== user.uid && !isAdmin) {
           router.push('/dashboard/active');
           return;
         }

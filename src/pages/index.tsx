@@ -591,6 +591,12 @@ export default function Home() {
   const [trackScansEnabled, setTrackScansEnabled] = useState(false);
   const [removeWatermarkEnabled, setRemoveWatermarkEnabled] = useState(false);
 
+  // Campaign URL tracking
+  const [campaignEnabled, setCampaignEnabled] = useState(false);
+  const [campaignSource, setCampaignSource] = useState("");
+  const [campaignMedium, setCampaignMedium] = useState("");
+  const [campaignName, setCampaignName] = useState("");
+
   // Watermark settings from admin
   const [watermarkSettings, setWatermarkSettings] = useState<{
     enabled: boolean;
@@ -1315,6 +1321,14 @@ export default function Home() {
           logoImage: logoToSave || null,
           logoPreset: logoPreset || null,
         },
+        ...(campaignEnabled && {
+          campaign: {
+            enabled: true,
+            source: campaignSource,
+            medium: campaignMedium,
+            name: campaignName,
+          },
+        }),
       };
 
       let finalId = nanoId;
@@ -2153,6 +2167,108 @@ export default function Home() {
                   )}
                 </div>
               </div>
+
+              {/* Campaign URL Tracking */}
+              {contentType === ContentTypes.URL && (
+                <div className="mt-6 border border-zinc-700 rounded-2xl p-4 bg-zinc-900/60 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-white">
+                        Campaign Tracking
+                      </p>
+                      <span className="text-[10px] bg-blue-500/20 text-blue-200 px-2 py-0.5 rounded-full border border-blue-400/60">
+                        UTM Parameters
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCampaignEnabled(!campaignEnabled)}
+                      className={`relative w-10 h-5 rounded-full border flex items-center transition-colors
+                        ${
+                          campaignEnabled
+                            ? "bg-lime-400 border-lime-300"
+                            : "bg-zinc-700 border-zinc-600"
+                        }`}
+                    >
+                      <span
+                        className={`w-4 h-4 rounded-full bg-white transform transition-transform duration-200
+                          ${
+                            campaignEnabled
+                              ? "translate-x-[14px]"
+                              : "translate-x-[2px]"
+                          }`}
+                      />
+                    </button>
+                  </div>
+
+                  {campaignEnabled && (
+                    <div className="space-y-3 pt-2">
+                      <p className="text-xs text-zinc-300">
+                        Add UTM parameters to track your marketing campaigns
+                      </p>
+                      
+                      <div className="grid gap-3">
+                        <div>
+                          <label className="block text-xs text-zinc-300 mb-1">
+                            Campaign Source
+                            <span className="text-zinc-500 ml-1">(e.g., google, facebook, newsletter)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={campaignSource}
+                            onChange={(e) => setCampaignSource(e.target.value)}
+                            placeholder="e.g., google"
+                            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500 focus:border-lime-400 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-zinc-300 mb-1">
+                            Campaign Medium
+                            <span className="text-zinc-500 ml-1">(e.g., cpc, email, social)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={campaignMedium}
+                            onChange={(e) => setCampaignMedium(e.target.value)}
+                            placeholder="e.g., cpc"
+                            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500 focus:border-lime-400 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-zinc-300 mb-1">
+                            Campaign Name
+                            <span className="text-zinc-500 ml-1">(e.g., spring_sale, product_launch)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={campaignName}
+                            onChange={(e) => setCampaignName(e.target.value)}
+                            placeholder="e.g., spring_sale"
+                            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-500 focus:border-lime-400 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {(campaignSource || campaignMedium || campaignName) && (
+                        <div className="mt-3 p-3 bg-zinc-800/50 border border-zinc-700 rounded-lg">
+                          <p className="text-xs text-zinc-400 mb-2">Preview URL:</p>
+                          <p className="text-xs text-lime-300 break-all font-mono">
+                            {text}
+                            {text.includes('?') ? '&' : '?'}
+                            {[
+                              campaignSource && `utm_source=${encodeURIComponent(campaignSource)}`,
+                              campaignMedium && `utm_medium=${encodeURIComponent(campaignMedium)}`,
+                              campaignName && `utm_campaign=${encodeURIComponent(campaignName)}`
+                            ].filter(Boolean).join('&')}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* design card */}
               <div className="mt-4 border border-zinc-700 rounded-2xl p-4 bg-zinc-900/60 space-y-4">
