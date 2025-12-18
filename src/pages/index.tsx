@@ -1379,8 +1379,7 @@ export default function Home() {
       const hasWatermark = watermarkSettings?.enabled && !removeWatermarkEnabled && !canUseFeature('removeWatermark');
       
       if (format === "svg" && (hasFrames || hasWatermark)) {
-        // Force PNG for frames/watermarks
-        setError("SVG export doesn't support frames or watermarks. Using PNG instead.");
+        // Force PNG for frames/watermarks (silently)
         format = "png";
       }
 
@@ -1441,6 +1440,17 @@ export default function Home() {
         logging: false,
         width: previewNode.offsetWidth,
         height: previewNode.offsetHeight,
+        onclone: (clonedDoc) => {
+          // Ensure all images are loaded in the cloned document
+          const images = clonedDoc.getElementsByTagName('img');
+          for (let i = 0; i < images.length; i++) {
+            const img = images[i];
+            // Force reload to ensure CORS is handled
+            if (img.src && !img.complete) {
+              img.crossOrigin = 'anonymous';
+            }
+          }
+        },
       });
 
       const link = document.createElement("a");
@@ -1727,6 +1737,7 @@ export default function Home() {
               src={watermarkSettings.logoUrl} 
               alt="watermark" 
               className="h-3 w-auto object-contain"
+              crossOrigin="anonymous"
             />
           )}
           {watermarkSettings.text && (

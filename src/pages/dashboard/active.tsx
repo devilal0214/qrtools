@@ -803,6 +803,13 @@ export default function ActiveCodes() {
           cacheBust: true,
           pixelRatio: 2,
           backgroundColor: "#ffffff",
+          skipFonts: true,
+          canvasWidth: frameExportRef.current.offsetWidth * 2,
+          canvasHeight: frameExportRef.current.offsetHeight * 2,
+          filter: (node) => {
+            // Include all nodes
+            return true;
+          },
         });
         downloadDataUrl(dataUrl, `${name}.png`);
       } else {
@@ -1861,6 +1868,7 @@ export default function ActiveCodes() {
                     src={watermarkSettings.logoUrl} 
                     alt="watermark" 
                     className="h-3 w-auto object-contain"
+                    crossOrigin="anonymous"
                   />
                 )}
                 {watermarkSettings.text && (
@@ -2024,6 +2032,7 @@ export default function ActiveCodes() {
                     src={watermarkSettings.logoUrl} 
                     alt="watermark" 
                     className="h-3 w-auto object-contain"
+                    crossOrigin="anonymous"
                   />
                 )}
                 {watermarkSettings.text && (
