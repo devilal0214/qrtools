@@ -1374,6 +1374,16 @@ export default function Home() {
     setError("");
 
     try {
+      // Check if we have frames or watermarks - if yes, force PNG
+      const hasFrames = frameStyle !== "none" && frameStyle !== "noFrame";
+      const hasWatermark = watermarkSettings?.enabled && !removeWatermarkEnabled && !canUseFeature('removeWatermark');
+      
+      if (format === "svg" && (hasFrames || hasWatermark)) {
+        // Force PNG for frames/watermarks
+        setError("SVG export doesn't support frames or watermarks. Using PNG instead.");
+        format = "png";
+      }
+
       if (format === "svg") {
         const svgElement = qrRef.current as SVGSVGElement;
         let svgData = new XMLSerializer().serializeToString(svgElement);

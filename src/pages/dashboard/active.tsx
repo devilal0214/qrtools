@@ -6,6 +6,7 @@ import { useRouter } from "next/router";
 import DashboardLayout from "@/components/DashboardLayout";
 import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/hooks/useAuth";
+import { usePlanFeatures } from "@/hooks/usePlanFeatures";
 
 import EditQRModal from "@/components/EditQRModal";
 import ViewQRModal from "@/components/ViewQRModal";
@@ -17,6 +18,7 @@ import {
   where,
   getDocs,
   doc,
+  getDoc,
   updateDoc,
   addDoc,
 } from "firebase/firestore";
@@ -169,6 +171,7 @@ const downloadSvgString = (svgString: string, filename: string) => {
 export default function ActiveCodes() {
   const router = useRouter();
   const { user } = useAuth();
+  const { canUseFeature } = usePlanFeatures();
 
   // ---------- LIST STATE ----------
   const [codes, setCodes] = useState<QRCode[]>([]);
@@ -269,6 +272,16 @@ export default function ActiveCodes() {
   // ✅ DOWNLOAD FORMAT
   const [downloadFormat, setDownloadFormat] = useState<"png" | "svg">("png");
 
+  // Watermark settings from admin
+  const [watermarkSettings, setWatermarkSettings] = useState<{
+    enabled: boolean;
+    logoUrl: string;
+    text: string;
+    position: string;
+    size: string;
+    opacity: number;
+  } | null>(null);
+
   // for styled preview + download
   const qrWrapperRef = useRef<HTMLDivElement | null>(null);
   const qrCodeInstanceRef = useRef<any>(null);
@@ -330,6 +343,24 @@ export default function ActiveCodes() {
 
     fetchQRCodes();
   }, [user]);
+
+  // Fetch watermark settings from Firestore
+  useEffect(() => {
+    const fetchWatermarkSettings = async () => {
+      try {
+        const settingsDoc = await getDoc(doc(db, 'settings', 'config'));
+        if (settingsDoc.exists()) {
+          const data = settingsDoc.data();
+          if (data.watermark) {
+            setWatermarkSettings(data.watermark);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching watermark settings:', error);
+      }
+    };
+    fetchWatermarkSettings();
+  }, []);
 
   // ---------- LIST HANDLERS ----------
   const handleEditClick = (qrCode: QRCode) => {
@@ -1790,7 +1821,7 @@ export default function ActiveCodes() {
           {/* ✅ The export container */}
           <div
             ref={frameExportRef}
-            className={`mb-4 w-full flex flex-col items-center ${frameClass}`}
+            className={`mb-4 w-full flex flex-col items-center ${frameClass} relative`}
           >
             <div
               className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
@@ -1808,6 +1839,35 @@ export default function ActiveCodes() {
                 }`}
               >
                 POWERED BY YOUR BRAND
+              </div>
+            )}
+
+            {/* Watermark */}
+            {watermarkSettings?.enabled && !canUseFeature('removeWatermark') && (
+              <div 
+                className={`absolute ${
+                  watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
+                  watermarkSettings.position === 'bottom-left' ? 'bottom-2 left-2' :
+                  'bottom-2 left-1/2 -translate-x-1/2'
+                } ${
+                  watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
+                  watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
+                  'text-[10px] px-2 py-1'
+                } bg-white rounded flex items-center gap-1 shadow-sm`}
+                style={{ opacity: watermarkSettings.opacity }}
+              >
+                {watermarkSettings.logoUrl && (
+                  <img 
+                    src={watermarkSettings.logoUrl} 
+                    alt="watermark" 
+                    className="h-3 w-auto object-contain"
+                  />
+                )}
+                {watermarkSettings.text && (
+                  <span className="text-gray-700 font-medium whitespace-nowrap">
+                    {watermarkSettings.text}
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -1924,7 +1984,7 @@ export default function ActiveCodes() {
           {/* ✅ Export container here also (same ref) */}
           <div
             ref={frameExportRef}
-            className={`w-full flex flex-col items-center ${frameClass}`}
+            className={`w-full flex flex-col items-center ${frameClass} relative`}
           >
             <div
               className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
@@ -1942,6 +2002,35 @@ export default function ActiveCodes() {
                 }`}
               >
                 POWERED BY YOUR BRAND
+              </div>
+            )}
+
+            {/* Watermark */}
+            {watermarkSettings?.enabled && !canUseFeature('removeWatermark') && (
+              <div 
+                className={`absolute ${
+                  watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
+                  watermarkSettings.position === 'bottom-left' ? 'bottom-2 left-2' :
+                  'bottom-2 left-1/2 -translate-x-1/2'
+                } ${
+                  watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
+                  watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
+                  'text-[10px] px-2 py-1'
+                } bg-white rounded flex items-center gap-1 shadow-sm`}
+                style={{ opacity: watermarkSettings.opacity }}
+              >
+                {watermarkSettings.logoUrl && (
+                  <img 
+                    src={watermarkSettings.logoUrl} 
+                    alt="watermark" 
+                    className="h-3 w-auto object-contain"
+                  />
+                )}
+                {watermarkSettings.text && (
+                  <span className="text-gray-700 font-medium whitespace-nowrap">
+                    {watermarkSettings.text}
+                  </span>
+                )}
               </div>
             )}
           </div>
