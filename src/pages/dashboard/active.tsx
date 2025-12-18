@@ -351,12 +351,15 @@ export default function ActiveCodes() {
         const settingsDoc = await getDoc(doc(db, 'settings', 'config'));
         if (settingsDoc.exists()) {
           const data = settingsDoc.data();
+          console.log('Dashboard - Watermark settings fetched:', data.watermark);
           if (data.watermark) {
             setWatermarkSettings(data.watermark);
           }
+        } else {
+          console.log('Dashboard - No settings document found');
         }
       } catch (error) {
-        console.error('Error fetching watermark settings:', error);
+        console.error('Dashboard - Error fetching watermark settings:', error);
       }
     };
     fetchWatermarkSettings();
@@ -1860,7 +1863,7 @@ export default function ActiveCodes() {
                   watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
                   watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
                   'text-[10px] px-2 py-1'
-                } bg-white rounded flex items-center gap-1 shadow-sm`}
+                } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
                 style={{ opacity: watermarkSettings.opacity }}
               >
                 {watermarkSettings.logoUrl && (
@@ -1869,6 +1872,8 @@ export default function ActiveCodes() {
                     alt="watermark" 
                     className="h-3 w-auto object-contain"
                     crossOrigin="anonymous"
+                    onLoad={() => console.log('Dashboard - Watermark logo loaded (step 2)')}
+                    onError={(e) => console.error('Dashboard - Watermark logo failed (step 2):', watermarkSettings.logoUrl)}
                   />
                 )}
                 {watermarkSettings.text && (
@@ -2024,7 +2029,7 @@ export default function ActiveCodes() {
                   watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
                   watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
                   'text-[10px] px-2 py-1'
-                } bg-white rounded flex items-center gap-1 shadow-sm`}
+                } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
                 style={{ opacity: watermarkSettings.opacity }}
               >
                 {watermarkSettings.logoUrl && (
@@ -2033,6 +2038,8 @@ export default function ActiveCodes() {
                     alt="watermark" 
                     className="h-3 w-auto object-contain"
                     crossOrigin="anonymous"
+                    onLoad={() => console.log('Dashboard - Watermark logo loaded (step 3)')}
+                    onError={(e) => console.error('Dashboard - Watermark logo failed (step 3):', watermarkSettings.logoUrl)}
                   />
                 )}
                 {watermarkSettings.text && (

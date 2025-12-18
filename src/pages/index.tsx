@@ -614,9 +614,12 @@ export default function Home() {
         const settingsDoc = await getDoc(doc(db, 'settings', 'config'));
         if (settingsDoc.exists()) {
           const data = settingsDoc.data();
+          console.log('Watermark settings fetched:', data.watermark);
           if (data.watermark) {
             setWatermarkSettings(data.watermark);
           }
+        } else {
+          console.log('No settings document found');
         }
       } catch (error) {
         console.error('Error fetching watermark settings:', error);
@@ -1709,9 +1712,21 @@ export default function Home() {
       !removeWatermarkEnabled && 
       !canUseFeature('removeWatermark');
 
+    console.log('Watermark check:', {
+      watermarkSettings,
+      shouldShowWatermark,
+      removeWatermarkEnabled,
+      canUseRemoveWatermark: canUseFeature('removeWatermark')
+    });
+
     // Watermark component
     const WatermarkOverlay = () => {
-      if (!shouldShowWatermark) return null;
+      if (!shouldShowWatermark) {
+        console.log('Watermark not shown - shouldShowWatermark is false');
+        return null;
+      }
+
+      console.log('Rendering watermark with logo:', watermarkSettings?.logoUrl);
 
       const sizeMap = {
         small: 'text-[8px] px-1.5 py-0.5',
@@ -1729,7 +1744,7 @@ export default function Home() {
         <div 
           className={`absolute ${positionMap[watermarkSettings.position as keyof typeof positionMap] || 'bottom-2 right-2'} 
             ${sizeMap[watermarkSettings.size as keyof typeof sizeMap] || 'text-[8px] px-1.5 py-0.5'}
-            bg-white rounded flex items-center gap-1 shadow-sm`}
+            bg-white rounded flex items-center gap-1 shadow-sm z-10`}
           style={{ opacity: watermarkSettings.opacity }}
         >
           {watermarkSettings.logoUrl && (
@@ -1738,6 +1753,8 @@ export default function Home() {
               alt="watermark" 
               className="h-3 w-auto object-contain"
               crossOrigin="anonymous"
+              onLoad={() => console.log('Watermark logo loaded successfully')}
+              onError={(e) => console.error('Watermark logo failed to load:', e, 'URL:', watermarkSettings.logoUrl)}
             />
           )}
           {watermarkSettings.text && (
