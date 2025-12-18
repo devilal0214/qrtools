@@ -1708,15 +1708,16 @@ export default function Home() {
     const QR_PIXEL_SIZE = 256;
 
     // Check if watermark should be shown
+    // Show watermark if admin enabled it AND user hasn't explicitly removed it (with premium access)
     const shouldShowWatermark = watermarkSettings?.enabled && 
-      !removeWatermarkEnabled && 
-      !canUseFeature('removeWatermark');
+      !(removeWatermarkEnabled && canUseFeature('removeWatermark'));
 
     console.log('Watermark check:', {
       watermarkSettings,
       shouldShowWatermark,
       removeWatermarkEnabled,
-      canUseRemoveWatermark: canUseFeature('removeWatermark')
+      canUseRemoveWatermark: canUseFeature('removeWatermark'),
+      logic: `enabled: ${watermarkSettings?.enabled}, removed: ${removeWatermarkEnabled}, canRemove: ${canUseFeature('removeWatermark')}`
     });
 
     // Watermark component

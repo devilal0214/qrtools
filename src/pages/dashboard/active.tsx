@@ -1852,8 +1852,8 @@ export default function ActiveCodes() {
               </div>
             )}
 
-            {/* Watermark */}
-            {watermarkSettings?.enabled && !canUseFeature('removeWatermark') && (
+            {/* Watermark - Show by default unless admin disabled it */}
+            {watermarkSettings?.enabled && (
               <div 
                 className={`absolute ${
                   watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
@@ -2018,8 +2018,8 @@ export default function ActiveCodes() {
               </div>
             )}
 
-            {/* Watermark */}
-            {watermarkSettings?.enabled && !canUseFeature('removeWatermark') && (
+            {/* Watermark - Show by default unless admin disabled it */}
+            {watermarkSettings?.enabled && (
               <div 
                 className={`absolute ${
                   watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
