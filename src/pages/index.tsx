@@ -1836,8 +1836,10 @@ export default function Home() {
       case "noFrame":
         return (
           <div className="relative bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
-            {QRCore}
-            <WatermarkOverlay />
+            <div className="relative">
+              {QRCore}
+              <WatermarkOverlay />
+            </div>
           </div>
         );
 
@@ -1845,9 +1847,11 @@ export default function Home() {
         return (
           <div className="relative inline-flex items-center justify-center">
             <div className="rounded-full bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.25)] border border-slate-100">
-              <div className="rounded-full overflow-hidden">{QRCore}</div>
+              <div className="relative rounded-full overflow-hidden">
+                {QRCore}
+                <WatermarkOverlay />
+              </div>
             </div>
-            <WatermarkOverlay />
           </div>
         );
 
@@ -1858,9 +1862,11 @@ export default function Home() {
               className="relative bg-white rounded-2xl shadow-xl border border-yellow-300/60
                       px-5 pt-5 pb-4 flex flex-col items-center"
             >
-              {QRCore}
+              <div className="relative">
+                {QRCore}
+                <WatermarkOverlay />
+              </div>
               <ScanMeButton color="#F59E0B" />
-              <WatermarkOverlay />
             </div>
           </div>
         );
@@ -1873,8 +1879,10 @@ export default function Home() {
                       px-5 pb-5 pt-3 flex flex-col items-center"
             >
               <ScanMeButton color="#A855F7" />
-              <div className="mt-2">{QRCore}</div>
-              <WatermarkOverlay />
+              <div className="relative mt-2">
+                {QRCore}
+                <WatermarkOverlay />
+              </div>
             </div>
           </div>
         );
@@ -1886,9 +1894,11 @@ export default function Home() {
               className="relative bg-white rounded-2xl shadow-xl border border-blue-300/60
                       px-5 pt-5 pb-4 flex flex-col items-center"
             >
-              {QRCore}
+              <div className="relative">
+                {QRCore}
+                <WatermarkOverlay />
+              </div>
               <ScanMeButton color="#3B82F6" />
-              <WatermarkOverlay />
             </div>
           </div>
         );
@@ -1900,9 +1910,11 @@ export default function Home() {
               className="relative bg-white rounded-2xl shadow-xl border border-emerald-300/60
                       px-5 pt-5 pb-4 flex flex-col items-center"
             >
-              {QRCore}
+              <div className="relative">
+                {QRCore}
+                <WatermarkOverlay />
+              </div>
               <ScanMeButton color="#15803D" />
-              <WatermarkOverlay />
             </div>
           </div>
         );
@@ -1914,9 +1926,11 @@ export default function Home() {
               className="relative bg-white rounded-2xl shadow-xl border border-rose-300/60
                       px-5 pt-5 pb-4 flex flex-col items-center"
             >
-              {QRCore}
+              <div className="relative">
+                {QRCore}
+                <WatermarkOverlay />
+              </div>
               <ScanMeButton color="#EF4444" />
-              <WatermarkOverlay />
             </div>
           </div>
         );
@@ -1924,8 +1938,10 @@ export default function Home() {
       default:
         return (
           <div className="relative bg-white rounded-[10px] shadow-[0_18px_40px_rgba(15,23,42,0.06)] p-6 flex items-center justify-center">
-            {QRCore}
-            <WatermarkOverlay />
+            <div className="relative">
+              {QRCore}
+              <WatermarkOverlay />
+            </div>
           </div>
         );
     }

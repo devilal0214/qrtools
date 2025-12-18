@@ -1831,13 +1831,47 @@ export default function ActiveCodes() {
           {/* ✅ The export container */}
           <div
             ref={frameExportRef}
-            className={`mb-4 w-full flex flex-col items-center ${frameClass} relative`}
+            className={`mb-4 w-full flex flex-col items-center ${frameClass}`}
           >
-            <div
-              className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
-              style={{ width: size, height: size }}
-            >
-              <div ref={qrWrapperRef} />
+            <div className="relative">
+              <div
+                className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
+                style={{ width: size, height: size }}
+              >
+                <div ref={qrWrapperRef} />
+              </div>
+
+              {/* Watermark - Show by default unless admin disabled it */}
+              {watermarkSettings?.enabled && (
+                <div 
+                  className={`absolute ${
+                    watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
+                    watermarkSettings.position === 'bottom-left' ? 'bottom-2 left-2' :
+                    'bottom-2 left-1/2 -translate-x-1/2'
+                  } ${
+                    watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
+                    watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
+                    'text-[10px] px-2 py-1'
+                  } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
+                  style={{ opacity: watermarkSettings.opacity }}
+                >
+                  {watermarkSettings.logoUrl && (
+                    <img 
+                      src={watermarkSettings.logoUrl} 
+                      alt="watermark" 
+                      className="h-3 w-auto object-contain"
+                      crossOrigin="anonymous"
+                      onLoad={() => console.log('Dashboard - Watermark logo loaded (step 2)')}
+                      onError={(e) => console.error('Dashboard - Watermark logo failed (step 2):', watermarkSettings.logoUrl)}
+                    />
+                  )}
+                  {watermarkSettings.text && (
+                    <span className="text-gray-700 font-medium whitespace-nowrap">
+                      {watermarkSettings.text}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {showFooter && (
@@ -1849,38 +1883,6 @@ export default function ActiveCodes() {
                 }`}
               >
                 POWERED BY YOUR BRAND
-              </div>
-            )}
-
-            {/* Watermark - Show by default unless admin disabled it */}
-            {watermarkSettings?.enabled && (
-              <div 
-                className={`absolute ${
-                  watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
-                  watermarkSettings.position === 'bottom-left' ? 'bottom-2 left-2' :
-                  'bottom-2 left-1/2 -translate-x-1/2'
-                } ${
-                  watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
-                  watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
-                  'text-[10px] px-2 py-1'
-                } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
-                style={{ opacity: watermarkSettings.opacity }}
-              >
-                {watermarkSettings.logoUrl && (
-                  <img 
-                    src={watermarkSettings.logoUrl} 
-                    alt="watermark" 
-                    className="h-3 w-auto object-contain"
-                    crossOrigin="anonymous"
-                    onLoad={() => console.log('Dashboard - Watermark logo loaded (step 2)')}
-                    onError={(e) => console.error('Dashboard - Watermark logo failed (step 2):', watermarkSettings.logoUrl)}
-                  />
-                )}
-                {watermarkSettings.text && (
-                  <span className="text-gray-700 font-medium whitespace-nowrap">
-                    {watermarkSettings.text}
-                  </span>
-                )}
               </div>
             )}
           </div>
@@ -1997,13 +1999,47 @@ export default function ActiveCodes() {
           {/* ✅ Export container here also (same ref) */}
           <div
             ref={frameExportRef}
-            className={`w-full flex flex-col items-center ${frameClass} relative`}
+            className={`w-full flex flex-col items-center ${frameClass}`}
           >
-            <div
-              className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
-              style={{ width: size, height: size }}
-            >
-              <div ref={qrWrapperRef} />
+            <div className="relative">
+              <div
+                className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
+                style={{ width: size, height: size }}
+              >
+                <div ref={qrWrapperRef} />
+              </div>
+
+              {/* Watermark - Show by default unless admin disabled it */}
+              {watermarkSettings?.enabled && (
+                <div 
+                  className={`absolute ${
+                    watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
+                    watermarkSettings.position === 'bottom-left' ? 'bottom-2 left-2' :
+                    'bottom-2 left-1/2 -translate-x-1/2'
+                  } ${
+                    watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
+                    watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
+                    'text-[10px] px-2 py-1'
+                  } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
+                  style={{ opacity: watermarkSettings.opacity }}
+                >
+                  {watermarkSettings.logoUrl && (
+                    <img 
+                      src={watermarkSettings.logoUrl} 
+                      alt="watermark" 
+                      className="h-3 w-auto object-contain"
+                      crossOrigin="anonymous"
+                      onLoad={() => console.log('Dashboard - Watermark logo loaded (step 3)')}
+                      onError={(e) => console.error('Dashboard - Watermark logo failed (step 3):', watermarkSettings.logoUrl)}
+                    />
+                  )}
+                  {watermarkSettings.text && (
+                    <span className="text-gray-700 font-medium whitespace-nowrap">
+                      {watermarkSettings.text}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {showFooter && (
@@ -2015,38 +2051,6 @@ export default function ActiveCodes() {
                 }`}
               >
                 POWERED BY YOUR BRAND
-              </div>
-            )}
-
-            {/* Watermark - Show by default unless admin disabled it */}
-            {watermarkSettings?.enabled && (
-              <div 
-                className={`absolute ${
-                  watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
-                  watermarkSettings.position === 'bottom-left' ? 'bottom-2 left-2' :
-                  'bottom-2 left-1/2 -translate-x-1/2'
-                } ${
-                  watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
-                  watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
-                  'text-[10px] px-2 py-1'
-                } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
-                style={{ opacity: watermarkSettings.opacity }}
-              >
-                {watermarkSettings.logoUrl && (
-                  <img 
-                    src={watermarkSettings.logoUrl} 
-                    alt="watermark" 
-                    className="h-3 w-auto object-contain"
-                    crossOrigin="anonymous"
-                    onLoad={() => console.log('Dashboard - Watermark logo loaded (step 3)')}
-                    onError={(e) => console.error('Dashboard - Watermark logo failed (step 3):', watermarkSettings.logoUrl)}
-                  />
-                )}
-                {watermarkSettings.text && (
-                  <span className="text-gray-700 font-medium whitespace-nowrap">
-                    {watermarkSettings.text}
-                  </span>
-                )}
               </div>
             )}
           </div>
