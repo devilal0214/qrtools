@@ -70,6 +70,7 @@ const truncateTitle = (title: string, maxLength: number = 30) => {
 };
 
 const truncateContent = (content: string, maxLength: number = 40) => {
+  if (!content) return "";
   if (content.length <= maxLength) return content;
   return content.substring(0, maxLength) + "...";
 };
@@ -196,6 +197,9 @@ export default function ActiveCodes() {
   const [selectedType, setSelectedType] = useState<string>("URL");
   const [qrTitle, setQrTitle] = useState<string>("");
 
+  // ✅ Edit mode (wizard edit like your other file)
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   // URL
   const [urlValue, setUrlValue] = useState<string>("");
 
@@ -243,7 +247,9 @@ export default function ActiveCodes() {
   const [fileUrl, setFileUrl] = useState<string>("");
 
   // Multi-URL with titles
-  const [multiUrls, setMultiUrls] = useState<Array<{url: string, title: string}>>([{url: "", title: ""}]);
+  const [multiUrls, setMultiUrls] = useState<
+    Array<{ url: string; title: string }>
+  >([{ url: "", title: "" }]);
   const [multiUrlTitle, setMultiUrlTitle] = useState("My Links");
   const [showAddUrlModal, setShowAddUrlModal] = useState(false);
 
@@ -348,29 +354,158 @@ export default function ActiveCodes() {
   useEffect(() => {
     const fetchWatermarkSettings = async () => {
       try {
-        const settingsDoc = await getDoc(doc(db, 'settings', 'config'));
+        const settingsDoc = await getDoc(doc(db, "settings", "config"));
         if (settingsDoc.exists()) {
           const data = settingsDoc.data();
-          console.log('Dashboard - Watermark settings fetched:', data.watermark);
           if (data.watermark) {
             setWatermarkSettings(data.watermark);
           }
-        } else {
-          console.log('Dashboard - No settings document found');
         }
       } catch (error) {
-        console.error('Dashboard - Error fetching watermark settings:', error);
+        console.error("Dashboard - Error fetching watermark settings:", error);
       }
     };
     fetchWatermarkSettings();
   }, []);
 
   // ---------- LIST HANDLERS ----------
+  // ✅ Wizard edit (NO POPUP): fills step-1 fields just like your other code
   const handleEditClick = (qrCode: QRCode) => {
-    setSelectedQR(qrCode);
-    setShowEditModal(true);
+    resetWizard();
+    setEditingId(qrCode.id);
+    setWizardStep(1);
+
+    setSelectedType(qrCode.type || "URL");
+    setQrTitle(qrCode.title || "");
+    setMode((qrCode.mode as any) || "dynamic");
+
+    setSize(qrCode.settings?.size || 256);
+    setFgColor(qrCode.settings?.fgColor || "#000000");
+    setBgColor(qrCode.settings?.bgColor || "#ffffff");
+
+    setPatternStyle((qrCode.settings?.patternStyle as any) || "classic");
+    setFrameStyle((qrCode.settings?.frameStyle as any) || "none");
+
+    setLogoPreset(qrCode.settings?.logoPreset || null);
+    setUploadedLogoDataUrl(qrCode.settings?.logoImage || null);
+    setUploadedLogoName(qrCode.settings?.logoImage ? "uploaded-logo" : "");
+
+    // campaign fields
+    setCampaignEnabled(!!qrCode.campaign?.enabled);
+    setCampaignSource(qrCode.campaign?.utmSource || "");
+    setCampaignMedium(qrCode.campaign?.utmMedium || "");
+    setCampaignName(qrCode.campaign?.utmCampaign || "");
+
+    const content = qrCode.content || "";
+
+    if (qrCode.type === "URL") setUrlValue(content);
+    if (qrCode.type === "Plain Text") setPlainTextValue(content);
+
+    if (qrCode.type === "Email") {
+      const raw = content.replace("mailto:", "");
+      const [addr, qs] = raw.split("?");
+      setEmailAddress(addr || "");
+      const params = new URLSearchParams(qs || "");
+      setEmailSubject(decodeURIComponent(params.get("subject") || ""));
+      setEmailBody(decodeURIComponent(params.get("body") || ""));
+    }
+
+    if (qrCode.type === "SMS") {
+      const raw = content.replace("sms:", "");
+      const [num, qs] = raw.split("?");
+      setSmsNumber(num || "");
+      const params = new URLSearchParams(qs || "");
+      setSmsMessage(decodeURIComponent(params.get("body") || ""));
+    }
+
+    if (qrCode.type === "Location") {
+      if (content.startsWith("geo:")) {
+        const geoRaw = content.replace("geo:", "");
+        const [coords, qs] = geoRaw.split("?");
+        const [lat, lng] = (coords || "").split(",");
+        setLocationLat(lat || "");
+        setLocationLng(lng || "");
+        const params = new URLSearchParams(qs || "");
+        setLocationAddress(decodeURIComponent(params.get("q") || ""));
+      } else if (content.includes("maps.google.com/?q=")) {
+        setLocationAddress(decodeURIComponent(content.split("q=")[1] || ""));
+      } else {
+        setLocationAddress(content);
+      }
+    }
+
+    if (qrCode.type === "Contact") {
+      setContactName((content.match(/FN:(.*)/)?.[1] || "").trim());
+      setContactPhone((content.match(/TEL;TYPE=CELL:(.*)/)?.[1] || "").trim());
+      setContactEmail(
+        (content.match(/EMAIL;TYPE=INTERNET:(.*)/)?.[1] || "").trim()
+      );
+      setContactCompany((content.match(/ORG:(.*)/)?.[1] || "").trim());
+      setContactNote((content.match(/NOTE:(.*)/)?.[1] || "").trim());
+    }
+
+    if (qrCode.type === "Socials") {
+      const lines = content.split("\n");
+      for (const line of lines) {
+        if (line.startsWith("Main:"))
+          setSocialMainUrl(line.replace("Main:", "").trim());
+        if (line.startsWith("Instagram:"))
+          setSocialInstagram(line.replace("Instagram:", "").trim());
+        if (line.startsWith("Facebook:"))
+          setSocialFacebook(line.replace("Facebook:", "").trim());
+        if (line.startsWith("X (Twitter):"))
+          setSocialX(line.replace("X (Twitter):", "").trim());
+        if (line.startsWith("LinkedIn:"))
+          setSocialLinkedIn(line.replace("LinkedIn:", "").trim());
+      }
+    }
+
+    if (qrCode.type === "App") {
+      const lines = content.split("\n");
+      for (const line of lines) {
+        if (line.startsWith("Universal:"))
+          setAppUniversalLink(line.replace("Universal:", "").trim());
+        if (line.startsWith("iOS:"))
+          setAppIosUrl(line.replace("iOS:", "").trim());
+        if (line.startsWith("Android:"))
+          setAppAndroidUrl(line.replace("Android:", "").trim());
+        if (line.startsWith("Web:"))
+          setAppWebUrl(line.replace("Web:", "").trim());
+      }
+    }
+
+    if (qrCode.type === "PDF") setPdfUrl(content);
+    if (qrCode.type === "File") setFileUrl(content);
+
+    if (qrCode.type === "Multi-URL") {
+      // stored as JSON string in your create logic
+      try {
+        const parsed = JSON.parse(content || "{}");
+        setMultiUrlTitle(parsed.title || "My Links");
+        const urls = Array.isArray(parsed.urls) ? parsed.urls : [];
+        if (urls.length) {
+          setMultiUrls(
+            urls.map((u: any) => ({
+              url: String(u.url || ""),
+              title: String(u.title || ""),
+            }))
+          );
+        } else {
+          setMultiUrls([{ url: "", title: "" }]);
+        }
+      } catch {
+        // fallback (if old stored format)
+        setMultiUrls([{ url: "", title: "" }]);
+      }
+    }
+
+    // optional scroll top
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   };
 
+  // (kept as-is) modal update handler if you still use EditQRModal somewhere else
   const handleUpdateQR = async (updatedQR: QRCode) => {
     try {
       setLoading(true);
@@ -452,7 +587,7 @@ export default function ActiveCodes() {
       case "File":
         return fileUrl.trim().length > 0;
       case "Multi-URL":
-        return multiUrls.some(u => u.url.trim().length > 0);
+        return multiUrls.some((u) => u.url.trim().length > 0);
       default:
         return false;
     }
@@ -560,7 +695,7 @@ export default function ActiveCodes() {
     if (selectedType === "Multi-URL") {
       const multiUrlData = {
         title: multiUrlTitle || "My Links",
-        urls: multiUrls.filter(item => item.url.trim())
+        urls: multiUrls.filter((item) => item.url.trim()),
       };
       return JSON.stringify(multiUrlData);
     }
@@ -572,6 +707,7 @@ export default function ActiveCodes() {
     setWizardStep(1);
     setSelectedType("URL");
     setQrTitle("");
+    setEditingId(null);
 
     setUrlValue("");
     setPlainTextValue("");
@@ -599,8 +735,13 @@ export default function ActiveCodes() {
     setAppWebUrl("");
     setPdfUrl("");
     setFileUrl("");
-    setMultiUrls([{url: "", title: ""}]);
+    setMultiUrls([{ url: "", title: "" }]);
     setMultiUrlTitle("My Links");
+
+    setCampaignEnabled(false);
+    setCampaignSource("");
+    setCampaignMedium("");
+    setCampaignName("");
 
     setMode("dynamic");
     setFgColor("#000000");
@@ -616,7 +757,7 @@ export default function ActiveCodes() {
     setDownloadFormat("png");
   };
 
-  // ✅ Save function (NO auto-reset here)
+  // ✅ Save / Update
   const saveQRCodeToFirestore = async (): Promise<QRCode | null> => {
     if (!user) {
       alert("You must be logged in to create a QR code.");
@@ -633,23 +774,22 @@ export default function ActiveCodes() {
       setLoading(true);
       const now = new Date().toISOString();
 
-      // Prepare campaign data if enabled for URL type
-      const campaignData = (selectedType === "URL" && campaignEnabled) ? {
-        enabled: true,
-        utmSource: campaignSource,
-        utmMedium: campaignMedium,
-        utmCampaign: campaignName
-      } : undefined;
+      const campaignData =
+        selectedType === "URL" && campaignEnabled
+          ? {
+              enabled: true,
+              utmSource: campaignSource,
+              utmMedium: campaignMedium,
+              utmCampaign: campaignName,
+            }
+          : undefined;
 
-      const newDoc = await addDoc(collection(db, "qrcodes"), {
+      const payload: any = {
         userId: user.uid,
         title: qrTitle || `${selectedType} QR Code`,
         type: selectedType,
         content,
-        createdAt: now,
         updatedAt: now,
-        scans: 0,
-        isActive: true,
         mode,
         settings: {
           size,
@@ -662,34 +802,50 @@ export default function ActiveCodes() {
           patternStyle,
         },
         ...(campaignData && { campaign: campaignData }),
+      };
+
+      // ✅ EDIT MODE
+      if (editingId) {
+        const qrRef = doc(db, "qrcodes", editingId);
+        await updateDoc(qrRef, payload);
+
+        setCodes((prev) =>
+          prev.map((c) =>
+            c.id === editingId ? ({ ...c, ...payload } as any) : c
+          )
+        );
+
+        const existing = codes.find((c) => c.id === editingId);
+        return {
+          id: editingId,
+          createdAt: existing?.createdAt || now,
+          scans: existing?.scans || 0,
+          isActive: true,
+          ...payload,
+        } as QRCode;
+      }
+
+      // ✅ CREATE MODE
+      const newDoc = await addDoc(collection(db, "qrcodes"), {
+        ...payload,
+        createdAt: now,
+        scans: 0,
+        isActive: true,
       });
 
       const newQRCode: QRCode = {
         id: newDoc.id,
-        title: qrTitle || `${selectedType} QR Code`,
-        type: selectedType,
-        content,
         createdAt: now,
         scans: 0,
         isActive: true,
-        mode,
-        settings: {
-          size,
-          fgColor,
-          bgColor,
-          shape: patternStyle,
-          logoPreset,
-          logoImage: uploadedLogoDataUrl || null,
-          frameStyle,
-          patternStyle,
-        },
+        ...payload,
       };
 
       setCodes((prev) => [newQRCode, ...prev]);
       return newQRCode;
     } catch (error) {
-      console.error("Error creating QR code:", error);
-      alert("Could not create QR code. Please try again.");
+      console.error("Error creating/updating QR code:", error);
+      alert("Could not save QR code. Please try again.");
       return null;
     } finally {
       setLoading(false);
@@ -779,25 +935,23 @@ export default function ActiveCodes() {
     uploadedLogoDataUrl,
   ]);
 
-  // ✅ Download = Auto Save + Download (WITH FRAME INCLUDED)
+  // ✅ Download = Save/Update + Download (WITH FRAME INCLUDED)
   const handleDownload = async () => {
     const saved = await saveQRCodeToFirestore();
     if (!saved) return;
 
-    const name = qrTitle || `${selectedType}-qr`;
+    const safeName = (qrTitle || `${selectedType}-qr`).replace(/\s+/g, "-");
 
-    // If no frame selected, keep original qr-code-styling download
     if (frameStyle === "none") {
       if (!qrCodeInstanceRef.current) return;
       qrCodeInstanceRef.current.download({
-        name,
+        name: safeName,
         extension: downloadFormat,
       });
       resetWizard();
       return;
     }
 
-    // ✅ Export full frame container (QR + footer + padding/background)
     if (!frameExportRef.current) return;
 
     try {
@@ -809,18 +963,15 @@ export default function ActiveCodes() {
           skipFonts: true,
           canvasWidth: frameExportRef.current.offsetWidth * 2,
           canvasHeight: frameExportRef.current.offsetHeight * 2,
-          filter: (node) => {
-            // Include all nodes
-            return true;
-          },
+          filter: () => true,
         });
-        downloadDataUrl(dataUrl, `${name}.png`);
+        downloadDataUrl(dataUrl, `${safeName}.png`);
       } else {
         const svgString = await toSvg(frameExportRef.current, {
           cacheBust: true,
           backgroundColor: "#ffffff",
         });
-        downloadSvgString(svgString, `${name}.svg`);
+        downloadSvgString(svgString, `${safeName}.svg`);
       }
 
       resetWizard();
@@ -833,9 +984,9 @@ export default function ActiveCodes() {
   // ---------- LIST DERIVED DATA ----------
   const filteredCodes = codes.filter(
     (code) =>
-      code.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      code.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      code.content.toLowerCase().includes(searchTerm.toLowerCase())
+      (code.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (code.type || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (code.content || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const sortedCodes = [...filteredCodes].sort((a, b) => {
@@ -847,8 +998,8 @@ export default function ActiveCodes() {
     if (sortField === "scans") {
       return sortDirection === "asc" ? a.scans - b.scans : b.scans - a.scans;
     }
-    const aVal = (a[sortField] || "") as string;
-    const bVal = (b[sortField] || "") as string;
+    const aVal = ((a as any)[sortField] || "") as string;
+    const bVal = ((b as any)[sortField] || "") as string;
     return sortDirection === "asc"
       ? aVal.localeCompare(bVal)
       : bVal.localeCompare(aVal);
@@ -904,6 +1055,11 @@ export default function ActiveCodes() {
           </div>
         );
       })}
+      {editingId && (
+        <span className="ml-4 px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold">
+          Editing existing QR
+        </span>
+      )}
     </div>
   );
 
@@ -1001,7 +1157,9 @@ export default function ActiveCodes() {
                         placeholder="e.g., newsletter, facebook, poster"
                         className="w-full border rounded px-3 py-2 text-sm"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Where the traffic comes from</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Where the traffic comes from
+                      </p>
                     </div>
 
                     <div>
@@ -1015,7 +1173,9 @@ export default function ActiveCodes() {
                         placeholder="e.g., qr_code, email, social"
                         className="w-full border rounded px-3 py-2 text-sm"
                       />
-                      <p className="text-xs text-gray-500 mt-1">The marketing medium</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        The marketing medium
+                      </p>
                     </div>
 
                     <div>
@@ -1029,14 +1189,20 @@ export default function ActiveCodes() {
                         placeholder="e.g., summer_sale, product_launch"
                         className="w-full border rounded px-3 py-2 text-sm"
                       />
-                      <p className="text-xs text-gray-500 mt-1">The specific campaign name</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        The specific campaign name
+                      </p>
                     </div>
 
                     {campaignSource && campaignMedium && campaignName && (
                       <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
-                        <p className="text-xs font-medium text-blue-900 mb-1">Preview URL:</p>
+                        <p className="text-xs font-medium text-blue-900 mb-1">
+                          Preview URL:
+                        </p>
                         <p className="text-xs font-mono text-blue-700 break-all">
-                          {urlValue || 'https://example.com'}?utm_source={campaignSource}&utm_medium={campaignMedium}&utm_campaign={campaignName}
+                          {urlValue || "https://example.com"}?utm_source=
+                          {campaignSource}&utm_medium={campaignMedium}
+                          &utm_campaign={campaignName}
                         </p>
                       </div>
                     )}
@@ -1446,7 +1612,7 @@ export default function ActiveCodes() {
               <p className="text-sm font-semibold text-gray-800 mb-1">
                 Multiple links with titles
               </p>
-              
+
               <div>
                 <label className="text-xs text-gray-500">Page Title</label>
                 <input
@@ -1457,21 +1623,32 @@ export default function ActiveCodes() {
                   className="w-full mt-1 border rounded-lg px-3 py-2 text-sm"
                 />
               </div>
-              
+
               <div className="space-y-2">
-                <label className="text-xs text-gray-500">Links ({multiUrls.filter(u => u.url.trim()).length})</label>
+                <label className="text-xs text-gray-500">
+                  Links ({multiUrls.filter((u) => u.url.trim()).length})
+                </label>
                 {multiUrls.map((item, index) => {
                   if (!item.url.trim()) return null;
                   return (
-                    <div key={index} className="p-3 bg-gray-50 rounded-lg flex items-start justify-between gap-2">
+                    <div
+                      key={index}
+                      className="p-3 bg-gray-50 rounded-lg flex items-start justify-between gap-2"
+                    >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{item.title || 'Untitled'}</p>
-                        <p className="text-xs text-gray-500 truncate">{item.url}</p>
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {item.title || "Untitled"}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {item.url}
+                        </p>
                       </div>
                       <button
                         onClick={() => {
                           const copy = multiUrls.filter((_, i) => i !== index);
-                          setMultiUrls(copy.length ? copy : [{url: "", title: ""}]);
+                          setMultiUrls(
+                            copy.length ? copy : [{ url: "", title: "" }]
+                          );
                         }}
                         className="text-red-500 hover:text-red-700 text-xl leading-none"
                       >
@@ -1481,18 +1658,28 @@ export default function ActiveCodes() {
                   );
                 })}
               </div>
-              
+
               <button
                 type="button"
                 onClick={() => setShowAddUrlModal(true)}
                 className="w-full py-2 px-4 text-sm text-green-600 hover:text-green-700 font-medium flex items-center justify-center gap-2 border border-dashed border-green-600 rounded-lg hover:bg-green-50"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
                 </svg>
                 Add Link
               </button>
-              
+
               <p className="text-[11px] text-gray-400">
                 When scanned, users will see a landing page with all links.
               </p>
@@ -1828,7 +2015,6 @@ export default function ActiveCodes() {
 
         {/* Right: styled preview + controls */}
         <div className="w-80 bg-gray-50 rounded-lg flex flex-col items-center justify-between py-6 px-4">
-          {/* ✅ The export container */}
           <div
             ref={frameExportRef}
             className={`mb-4 w-full flex flex-col items-center ${frameClass}`}
@@ -1928,6 +2114,7 @@ export default function ActiveCodes() {
           <h3 className="text-sm font-semibold text-gray-800">
             Name your QR Code and download it
           </h3>
+
           <div>
             <label className="text-xs text-gray-500 block mb-1">Title</label>
             <input
@@ -1955,6 +2142,7 @@ export default function ActiveCodes() {
                 <option value="svg">SVG</option>
               </select>
             </div>
+
             <div>
               <label className="text-xs text-gray-500 block mb-1">
                 Image size
@@ -1972,8 +2160,9 @@ export default function ActiveCodes() {
           </div>
 
           <p className="text-xs text-gray-400">
-            Click <strong>Download</strong> — it will automatically save the QR
-            Code in your account and download the file.
+            Click <strong>Download</strong> — it will{" "}
+            <strong>{editingId ? "update" : "save"}</strong> the QR Code in your
+            account and download the file.
           </p>
 
           <div className="flex gap-3 mt-4">
@@ -1996,7 +2185,6 @@ export default function ActiveCodes() {
         </div>
 
         <div className="w-80 bg-gray-50 rounded-lg flex flex-col items-center justify-center py-6 px-4">
-          {/* ✅ Export container here also (same ref) */}
           <div
             ref={frameExportRef}
             className={`w-full flex flex-col items-center ${frameClass}`}
@@ -2184,6 +2372,7 @@ export default function ActiveCodes() {
                         </th>
                       </tr>
                     </thead>
+
                     <tbody className="divide-y divide-gray-200">
                       {paginatedCodes.map((code) => (
                         <tr key={code.id}>
@@ -2202,27 +2391,35 @@ export default function ActiveCodes() {
                               )}
                             </div>
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             <div className="flex items-center gap-2">
                               <span>{code.type}</span>
                               {code.campaign?.enabled && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium" title="Campaign tracking enabled">
+                                <span
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium"
+                                  title="Campaign tracking enabled"
+                                >
                                   📊 UTM
                                 </span>
                               )}
                             </div>
                           </td>
+
                           <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
                             <div className="truncate" title={code.content}>
                               {truncateContent(code.content)}
                             </div>
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {new Date(code.createdAt).toLocaleDateString()}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-emerald-700">
                             {code.scans}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             <div className="flex items-center gap-2 justify-end">
                               <button
@@ -2232,6 +2429,7 @@ export default function ActiveCodes() {
                                 <EyeIcon className="w-4 h-4" />
                                 <span>View</span>
                               </button>
+
                               <button
                                 onClick={() => handleEditClick(code)}
                                 className="inline-flex items-center gap-1 px-3 py-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
@@ -2239,6 +2437,7 @@ export default function ActiveCodes() {
                                 <PencilIcon className="w-4 h-4" />
                                 <span>Edit</span>
                               </button>
+
                               <button
                                 onClick={() => handlePause(code)}
                                 className="inline-flex items-center gap-1 px-3 py-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
@@ -2246,12 +2445,27 @@ export default function ActiveCodes() {
                                 <PauseIcon className="w-4 h-4" />
                                 <span>Pause</span>
                               </button>
+
                               <button
-                                onClick={() => router.push(`/dashboard/qr-analytics/${code.id}`)}
+                                onClick={() =>
+                                  router.push(
+                                    `/dashboard/qr-analytics/${code.id}`
+                                  )
+                                }
                                 className="inline-flex items-center gap-1 px-3 py-1.5 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
                               >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                                  />
                                 </svg>
                                 <span>Analytics</span>
                               </button>
@@ -2262,6 +2476,47 @@ export default function ActiveCodes() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* PAGINATION */}
+                {totalPages > 1 && (
+                  <div className="flex justify-center gap-2 mt-4 pb-6">
+                    <button
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.max(prev - 1, 1))
+                      }
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 rounded-lg bg-gray-100 text-sm disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                      (page) => (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`px-3 py-1 rounded-lg text-sm ${
+                            currentPage === page
+                              ? "bg-emerald-600 text-white"
+                              : "bg-gray-100"
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      )
+                    )}
+
+                    <button
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                      }
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 rounded-lg bg-gray-100 text-sm disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-12 bg-white rounded-xl">
@@ -2274,45 +2529,6 @@ export default function ActiveCodes() {
                   className="text-emerald-600 hover:text-emerald-700 mt-2 inline-block text-sm font-semibold"
                 >
                   Create your first QR code
-                </button>
-              </div>
-            )}
-
-            {/* PAGINATION */}
-            {totalPages > 1 && (
-              <div className="flex justify-center gap-2 mt-4">
-                <button
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.max(prev - 1, 1))
-                  }
-                  disabled={currentPage === 1}
-                  className="px-3 py-1 rounded-lg bg-gray-100 text-sm disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                  (page) => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded-lg text-sm ${
-                        currentPage === page
-                          ? "bg-emerald-600 text-white"
-                          : "bg-gray-100"
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  )
-                )}
-                <button
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                  }
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1 rounded-lg bg-gray-100 text-sm disabled:opacity-50"
-                >
-                  Next
                 </button>
               </div>
             )}
@@ -2350,14 +2566,29 @@ export default function ActiveCodes() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 max-w-md w-full">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-900">Add New Link</h3>
-                <button onClick={() => setShowAddUrlModal(false)} className="text-gray-500 hover:text-gray-700">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <h3 className="text-lg font-bold text-gray-900">
+                  Add New Link
+                </h3>
+                <button
+                  onClick={() => setShowAddUrlModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
-              
+
               <AddUrlModalContent />
             </div>
           </div>
@@ -2369,20 +2600,25 @@ export default function ActiveCodes() {
   function AddUrlModalContent() {
     const [newUrl, setNewUrl] = useState("");
     const [newUrlTitle, setNewUrlTitle] = useState("");
-    
+
     const handleAddUrl = () => {
       if (newUrl.trim()) {
-        setMultiUrls([...multiUrls.filter(u => u.url.trim()), { url: newUrl, title: newUrlTitle || newUrl }]);
+        setMultiUrls([
+          ...multiUrls.filter((u) => u.url.trim()),
+          { url: newUrl, title: newUrlTitle || newUrl },
+        ]);
         setNewUrl("");
         setNewUrlTitle("");
         setShowAddUrlModal(false);
       }
     };
-    
+
     return (
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Link Title</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Link Title
+          </label>
           <input
             type="text"
             value={newUrlTitle}
@@ -2391,9 +2627,11 @@ export default function ActiveCodes() {
             placeholder="e.g., My Website"
           />
         </div>
-        
+
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            URL
+          </label>
           <input
             type="url"
             value={newUrl}
@@ -2402,7 +2640,7 @@ export default function ActiveCodes() {
             placeholder="https://example.com"
           />
         </div>
-        
+
         <div className="flex gap-3 pt-2">
           <button
             onClick={() => setShowAddUrlModal(false)}
