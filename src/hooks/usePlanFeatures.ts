@@ -238,21 +238,45 @@ export function usePlanFeatures(): PlanFeatures {
     }
 
     const createdDate = new Date(planData.createdAt);
-    const trialEndDate = new Date(createdDate);
-    // Add (trialDays - 1) because the creation day counts as day 1
-    // If created on Dec 17 with 14-day trial: Dec 17 is day 1, Dec 30 is day 14
-    trialEndDate.setDate(trialEndDate.getDate() + (trialDays - 1));
+    // Normalize to start of day for signup date
+    const signupDay = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate());
+    
+    // Debug logging
+    console.log('Trial Calculation Debug:', {
+      rawCreatedAt: planData.createdAt,
+      parsedDate: createdDate.toISOString(),
+      signupDay: signupDay.toISOString(),
+      trialDays,
+      today: new Date().toISOString()
+    });
+    
+    // Calculate trial end date: signup day + (trialDays - 1) days
+    // Because signup day = day 1, so for 14-day trial, day 14 is signup + 13 days
+    const trialEndDate = new Date(signupDay);
+    trialEndDate.setDate(signupDay.getDate() + (trialDays - 1));
     
     // Set to end of day for trial end date (23:59:59)
     trialEndDate.setHours(23, 59, 59, 999);
     
-    // Get current date at start of day (00:00:00) for accurate day comparison
+    // Get current date at start of day (00:00:00)
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endDay = new Date(trialEndDate.getFullYear(), trialEndDate.getMonth(), trialEndDate.getDate());
     
-    // Calculate difference in calendar days
-    const daysRemaining = Math.max(0, Math.round((endDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+    // Calculate days remaining: count from today through end date (inclusive)
+    // If today = Dec 19 and endDay = Dec 27, we want: 19,20,21,22,23,24,25,26,27 = 9 days
+    const diffTime = endDay.getTime() - today.getTime();
+    const daysDiff = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const daysRemaining = Math.max(0, daysDiff + 1); // +1 to include the end day itself
+
+    console.log('Trial End Calculation:', {
+      trialEndDate: trialEndDate.toISOString(),
+      endDay: endDay.toISOString(),
+      today: today.toISOString(),
+      diffTime,
+      daysDiff,
+      daysRemaining
+    });
 
     // Trial is active only if days remaining > 0
     return {

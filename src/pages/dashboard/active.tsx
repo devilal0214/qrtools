@@ -181,7 +181,8 @@ const downloadSvgString = (svgString: string, filename: string) => {
 export default function ActiveCodes() {
   const router = useRouter();
   const { user } = useAuth();
-  const { canUseFeature } = usePlanFeatures();
+  const { canUseFeature, planName, isTrialActive } = usePlanFeatures();
+  const isPremium = planName !== 'Free' || isTrialActive;
 
   // ---------- LIST STATE ----------
   const [codes, setCodes] = useState<QRCode[]>([]);
@@ -2834,6 +2835,7 @@ export default function ActiveCodes() {
           <ViewQRModal
             qrCode={selectedViewQR}
             onClose={() => setSelectedViewQR(null)}
+            isPremium={isPremium}
           />
         )}
 
