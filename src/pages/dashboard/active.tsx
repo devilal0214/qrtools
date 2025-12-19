@@ -25,6 +25,8 @@ import {
 import { db } from "@/lib/firebase";
 
 import { EyeIcon, PencilIcon, PauseIcon } from "@heroicons/react/24/outline";
+import { MdOutlineBrandingWatermark } from "react-icons/md";
+import { MdCampaign } from "react-icons/md";
 import { QRCodeSVG } from "qrcode.react";
 
 // @ts-ignore – qr-code-styling has no official TS types in many setups
@@ -46,6 +48,10 @@ interface QRCode {
   isActive: boolean;
   title?: string;
   mode?: "static" | "dynamic";
+
+  // ✅ NEW: Scan tracking toggle per QR
+  trackScans?: boolean;
+
   settings?: {
     size?: number;
     fgColor?: string;
@@ -55,6 +61,9 @@ interface QRCode {
     logoPreset?: string | null;
     patternStyle?: PatternStyle;
     frameStyle?: FrameStyle;
+
+    // ✅ NEW: Watermark toggle per QR (preview + export)
+    watermarkEnabled?: boolean;
   };
   campaign?: {
     enabled: boolean;
@@ -288,6 +297,10 @@ export default function ActiveCodes() {
     opacity: number;
   } | null>(null);
 
+  // ✅ NEW: two toggles (per-QR)
+  const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(true);
+  const [scanTrackingEnabled, setScanTrackingEnabled] = useState<boolean>(true);
+
   // for styled preview + download
   const qrWrapperRef = useRef<HTMLDivElement | null>(null);
   const qrCodeInstanceRef = useRef<any>(null);
@@ -368,6 +381,13 @@ export default function ActiveCodes() {
     fetchWatermarkSettings();
   }, []);
 
+  // ✅ If admin disabled watermark, force OFF locally too
+  useEffect(() => {
+    if (watermarkSettings && watermarkSettings.enabled === false) {
+      setWatermarkEnabled(false);
+    }
+  }, [watermarkSettings]);
+
   // ---------- LIST HANDLERS ----------
   // ✅ Wizard edit (NO POPUP): fills step-1 fields just like your other code
   const handleEditClick = (qrCode: QRCode) => {
@@ -389,6 +409,20 @@ export default function ActiveCodes() {
     setLogoPreset(qrCode.settings?.logoPreset || null);
     setUploadedLogoDataUrl(qrCode.settings?.logoImage || null);
     setUploadedLogoName(qrCode.settings?.logoImage ? "uploaded-logo" : "");
+
+    // ✅ NEW toggles (fallbacks)
+    const wm = qrCode.settings?.watermarkEnabled;
+    setWatermarkEnabled(
+      watermarkSettings?.enabled === false
+        ? false
+        : wm === undefined
+        ? true
+        : !!wm
+    );
+
+    setScanTrackingEnabled(
+      qrCode.trackScans === undefined ? true : !!qrCode.trackScans
+    );
 
     // campaign fields
     setCampaignEnabled(!!qrCode.campaign?.enabled);
@@ -516,6 +550,7 @@ export default function ActiveCodes() {
         content: updatedQR.content,
         settings: updatedQR.settings,
         mode: updatedQR.mode || "dynamic",
+        trackScans: updatedQR.trackScans ?? true,
         updatedAt: new Date().toISOString(),
       });
 
@@ -755,6 +790,10 @@ export default function ActiveCodes() {
     setUploadedLogoName("");
 
     setDownloadFormat("png");
+
+    // ✅ reset toggles
+    setScanTrackingEnabled(true);
+    setWatermarkEnabled(watermarkSettings?.enabled === false ? false : true);
   };
 
   // ✅ Save / Update
@@ -791,6 +830,10 @@ export default function ActiveCodes() {
         content,
         updatedAt: now,
         mode,
+
+        // ✅ NEW: persist scan tracking on QR doc
+        trackScans: scanTrackingEnabled,
+
         settings: {
           size,
           fgColor,
@@ -800,6 +843,10 @@ export default function ActiveCodes() {
           logoImage: uploadedLogoDataUrl || null,
           frameStyle,
           patternStyle,
+
+          // ✅ NEW: persist watermark toggle in settings
+          watermarkEnabled:
+            watermarkSettings?.enabled === false ? false : watermarkEnabled,
         },
         ...(campaignData && { campaign: campaignData }),
       };
@@ -1126,8 +1173,9 @@ export default function ActiveCodes() {
               <div className="border-t pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <p className="text-sm font-semibold text-gray-800">
-                      📊 Campaign URL Tracking
+                    <p className="text-sm font-semibold text-gray-800 flex gap-1">
+                      <MdCampaign />
+                      Campaign URL Tracking
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
                       Add UTM parameters to track this QR code in analytics
@@ -1765,6 +1813,10 @@ export default function ActiveCodes() {
     const showFooter =
       frameStyle === "dark-badge" || frameStyle === "outline-tag";
 
+    // ✅ Watermark display condition (admin + user toggle)
+    const showWatermark =
+      !!watermarkSettings?.enabled && watermarkEnabled && !!watermarkSettings;
+
     return (
       <div className="flex gap-6 p-6">
         {/* Left: design options */}
@@ -2011,6 +2063,85 @@ export default function ActiveCodes() {
               })}
             </div>
           </section>
+          {/* ✅ NEW: TOGGLES SECTION */}
+          <section className="space-y-3">
+            <h4 className="text-xs font-semibold text-gray-700">
+              Premium option
+            </h4>
+
+            {/* Watermark toggle */}
+            <div className="flex flex-col justify-between gap-5">
+              <div className="flex items-center justify-between w-[440px] p-4 bg-gray-50 rounded-lg border">
+                <div>
+                  <p className="text-sm font-semibold text-gray-800 flex gap-1">
+                    <MdOutlineBrandingWatermark />
+                    Watermark
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Turn off to remove watermark from preview + downloaded file.
+                  </p>
+                  {watermarkSettings?.enabled === false && (
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      Admin has disabled watermark globally.
+                    </p>
+                  )}
+                </div>
+
+                <label
+                  className={`relative inline-flex items-center ${
+                    watermarkSettings?.enabled === false
+                      ? "cursor-not-allowed opacity-60"
+                      : "cursor-pointer"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={watermarkEnabled}
+                    onChange={(e) => setWatermarkEnabled(e.target.checked)}
+                    disabled={watermarkSettings?.enabled === false}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              {/* Track scans toggle */}
+              <div className="flex items-center justify-between w-[440px] p-4 bg-gray-50 rounded-lg border">
+                <div>
+                  <p className="text-sm font-semibold flex gap-1 text-gray-800">
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                      />
+                    </svg>
+                    Track scans
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    When OFF, scan counts + analytics button will be disabled
+                    for this QR.
+                  </p>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={scanTrackingEnabled}
+                    onChange={(e) => setScanTrackingEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
+              </div>
+            </div>
+          </section>
         </div>
 
         {/* Right: styled preview + controls */}
@@ -2027,28 +2158,30 @@ export default function ActiveCodes() {
                 <div ref={qrWrapperRef} />
               </div>
 
-              {/* Watermark - Show by default unless admin disabled it */}
-              {watermarkSettings?.enabled && (
-                <div 
+              {/* ✅ Watermark (admin + user toggle) */}
+              {showWatermark && (
+                <div
                   className={`absolute ${
-                    watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
-                    watermarkSettings.position === 'bottom-left' ? 'bottom-2 left-2' :
-                    'bottom-2 left-1/2 -translate-x-1/2'
+                    watermarkSettings.position === "bottom-right"
+                      ? "bottom-2 right-2"
+                      : watermarkSettings.position === "bottom-left"
+                      ? "bottom-2 left-2"
+                      : "bottom-2 left-1/2 -translate-x-1/2"
                   } ${
-                    watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
-                    watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
-                    'text-[10px] px-2 py-1'
+                    watermarkSettings.size === "small"
+                      ? "text-[8px] px-1.5 py-0.5"
+                      : watermarkSettings.size === "large"
+                      ? "text-xs px-2.5 py-1.5"
+                      : "text-[10px] px-2 py-1"
                   } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
                   style={{ opacity: watermarkSettings.opacity }}
                 >
                   {watermarkSettings.logoUrl && (
-                    <img 
-                      src={watermarkSettings.logoUrl} 
-                      alt="watermark" 
+                    <img
+                      src={watermarkSettings.logoUrl}
+                      alt="watermark"
                       className="h-3 w-auto object-contain"
                       crossOrigin="anonymous"
-                      onLoad={() => console.log('Dashboard - Watermark logo loaded (step 2)')}
-                      onError={(e) => console.error('Dashboard - Watermark logo failed (step 2):', watermarkSettings.logoUrl)}
                     />
                   )}
                   {watermarkSettings.text && (
@@ -2107,6 +2240,9 @@ export default function ActiveCodes() {
 
     const showFooter =
       frameStyle === "dark-badge" || frameStyle === "outline-tag";
+
+    const showWatermark =
+      !!watermarkSettings?.enabled && watermarkEnabled && !!watermarkSettings;
 
     return (
       <div className="flex gap-6 p-6">
@@ -2197,28 +2333,30 @@ export default function ActiveCodes() {
                 <div ref={qrWrapperRef} />
               </div>
 
-              {/* Watermark - Show by default unless admin disabled it */}
-              {watermarkSettings?.enabled && (
-                <div 
+              {/* ✅ Watermark (admin + user toggle) */}
+              {showWatermark && (
+                <div
                   className={`absolute ${
-                    watermarkSettings.position === 'bottom-right' ? 'bottom-2 right-2' :
-                    watermarkSettings.position === 'bottom-left' ? 'bottom-2 left-2' :
-                    'bottom-2 left-1/2 -translate-x-1/2'
+                    watermarkSettings.position === "bottom-right"
+                      ? "bottom-2 right-2"
+                      : watermarkSettings.position === "bottom-left"
+                      ? "bottom-2 left-2"
+                      : "bottom-2 left-1/2 -translate-x-1/2"
                   } ${
-                    watermarkSettings.size === 'small' ? 'text-[8px] px-1.5 py-0.5' :
-                    watermarkSettings.size === 'large' ? 'text-xs px-2.5 py-1.5' :
-                    'text-[10px] px-2 py-1'
+                    watermarkSettings.size === "small"
+                      ? "text-[8px] px-1.5 py-0.5"
+                      : watermarkSettings.size === "large"
+                      ? "text-xs px-2.5 py-1.5"
+                      : "text-[10px] px-2 py-1"
                   } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
                   style={{ opacity: watermarkSettings.opacity }}
                 >
                   {watermarkSettings.logoUrl && (
-                    <img 
-                      src={watermarkSettings.logoUrl} 
-                      alt="watermark" 
+                    <img
+                      src={watermarkSettings.logoUrl}
+                      alt="watermark"
                       className="h-3 w-auto object-contain"
                       crossOrigin="anonymous"
-                      onLoad={() => console.log('Dashboard - Watermark logo loaded (step 3)')}
-                      onError={(e) => console.error('Dashboard - Watermark logo failed (step 3):', watermarkSettings.logoUrl)}
                     />
                   )}
                   {watermarkSettings.text && (
@@ -2374,105 +2512,122 @@ export default function ActiveCodes() {
                     </thead>
 
                     <tbody className="divide-y divide-gray-200">
-                      {paginatedCodes.map((code) => (
-                        <tr key={code.id}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            <div className="relative group">
-                              <span
-                                className="truncate block max-w-[200px]"
-                                title={code.title}
-                              >
-                                {truncateTitle(code.title || "Untitled")}
-                              </span>
-                              {code.title && code.title.length > 30 && (
-                                <div className="absolute left-0 -bottom-1 translate-y-full hidden group-hover:block z-50 w-auto p-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap">
-                                  {code.title}
-                                </div>
-                              )}
-                            </div>
-                          </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            <div className="flex items-center gap-2">
-                              <span>{code.type}</span>
-                              {code.campaign?.enabled && (
+                      {paginatedCodes.map((code) => {
+                        const isScanOn = code.trackScans !== false;
+                        return (
+                          <tr key={code.id}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              <div className="relative group">
                                 <span
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium"
-                                  title="Campaign tracking enabled"
+                                  className="truncate block max-w-[200px]"
+                                  title={code.title}
                                 >
-                                  📊 UTM
+                                  {truncateTitle(code.title || "Untitled")}
                                 </span>
-                              )}
-                            </div>
-                          </td>
+                                {code.title && code.title.length > 30 && (
+                                  <div className="absolute left-0 -bottom-1 translate-y-full hidden group-hover:block z-50 w-auto p-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap">
+                                    {code.title}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
 
-                          <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
-                            <div className="truncate" title={code.content}>
-                              {truncateContent(code.content)}
-                            </div>
-                          </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              <div className="flex items-center gap-2">
+                                <span>{code.type}</span>
+                                {code.campaign?.enabled && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium"
+                                    title="Campaign tracking enabled"
+                                  >
+                                    📊 UTM
+                                  </span>
+                                )}
+                                {!isScanOn && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-medium"
+                                    title="Scan tracking is disabled"
+                                  >
+                                    📈 OFF
+                                  </span>
+                                )}
+                              </div>
+                            </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {new Date(code.createdAt).toLocaleDateString()}
-                          </td>
+                            <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
+                              <div className="truncate" title={code.content}>
+                                {truncateContent(code.content)}
+                              </div>
+                            </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-emerald-700">
-                            {code.scans}
-                          </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              {new Date(code.createdAt).toLocaleDateString()}
+                            </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            <div className="flex items-center gap-2 justify-end">
-                              <button
-                                onClick={() => setSelectedViewQR(code)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
-                              >
-                                <EyeIcon className="w-4 h-4" />
-                                <span>View</span>
-                              </button>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-emerald-700">
+                              {isScanOn ? code.scans : "—"}
+                            </td>
 
-                              <button
-                                onClick={() => handleEditClick(code)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
-                              >
-                                <PencilIcon className="w-4 h-4" />
-                                <span>Edit</span>
-                              </button>
-
-                              <button
-                                onClick={() => handlePause(code)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
-                              >
-                                <PauseIcon className="w-4 h-4" />
-                                <span>Pause</span>
-                              </button>
-
-                              <button
-                                onClick={() =>
-                                  router.push(
-                                    `/dashboard/qr-analytics/${code.id}`
-                                  )
-                                }
-                                className="inline-flex items-center gap-1 px-3 py-1.5 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
-                              >
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              <div className="flex items-center gap-2 justify-end">
+                                <button
+                                  onClick={() => setSelectedViewQR(code)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
                                 >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                                  />
-                                </svg>
-                                <span>Analytics</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                  <EyeIcon className="w-4 h-4" />
+                                  <span>View</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handleEditClick(code)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
+                                >
+                                  <PencilIcon className="w-4 h-4" />
+                                  <span>Edit</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handlePause(code)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+                                >
+                                  <PauseIcon className="w-4 h-4" />
+                                  <span>Pause</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    if (!isScanOn) return;
+                                    router.push(
+                                      `/dashboard/qr-analytics/${code.id}`
+                                    );
+                                  }}
+                                  disabled={!isScanOn}
+                                  className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors ${
+                                    isScanOn
+                                      ? "text-purple-600 bg-purple-50 hover:bg-purple-100"
+                                      : "text-gray-400 bg-gray-100 cursor-not-allowed"
+                                  }`}
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                                    />
+                                  </svg>
+                                  <span>Analytics</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
