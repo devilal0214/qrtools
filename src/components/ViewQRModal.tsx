@@ -468,7 +468,7 @@ export default function ViewQRModal({
                     >
                       <option value={256}>256px</option>
                       <option value={512}>512px</option>
-                      <option value={1000}>1000px</option>
+                      <option value={768}>768px</option>
                     </select>
                   </div>
                 </div>

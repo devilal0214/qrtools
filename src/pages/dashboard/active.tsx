@@ -301,12 +301,18 @@ export default function ActiveCodes() {
   const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(true);
   const [scanTrackingEnabled, setScanTrackingEnabled] = useState<boolean>(true);
 
-  // for styled preview + download
-  const qrWrapperRef = useRef<HTMLDivElement | null>(null);
-  const qrCodeInstanceRef = useRef<any>(null);
+  // ✅ NEW: preview/export separation to prevent overflow + get exact export size
+  const qrWrapperPreviewRef = useRef<HTMLDivElement | null>(null);
+  const qrWrapperExportRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ Frame container ref (THIS is what we export for download)
+  const qrPreviewInstanceRef = useRef<any>(null);
+  const qrExportInstanceRef = useRef<any>(null);
+
+  const framePreviewRef = useRef<HTMLDivElement | null>(null);
   const frameExportRef = useRef<HTMLDivElement | null>(null);
+
+  const PREVIEW_MAX = 240; // keep sidebar preview neat
+  const previewScale = Math.min(1, PREVIEW_MAX / (size || 256));
 
   const handleLogoUpload = async (file: File | null) => {
     if (!file) return;
@@ -933,10 +939,10 @@ export default function ActiveCodes() {
     }
   };
 
+  // ✅ Render QR into BOTH preview and export nodes (so preview never overflows & export stays exact)
   useEffect(() => {
     if (wizardStep === 1) return;
     if (typeof window === "undefined") return;
-    if (!qrWrapperRef.current) return;
 
     const presetImage = getLogoPresetDataUrl(logoPreset, fgColor);
     const finalLogoImage = uploadedLogoDataUrl || presetImage;
@@ -963,14 +969,27 @@ export default function ActiveCodes() {
 
     const QRStylingAny: any = QRCodeStyling;
 
-    if (!qrCodeInstanceRef.current) {
-      qrCodeInstanceRef.current = new QRStylingAny(options);
+    // PREVIEW instance
+    if (!qrPreviewInstanceRef.current) {
+      qrPreviewInstanceRef.current = new QRStylingAny(options);
     } else {
-      qrCodeInstanceRef.current.update(options);
+      qrPreviewInstanceRef.current.update(options);
+    }
+    if (qrWrapperPreviewRef.current) {
+      qrWrapperPreviewRef.current.innerHTML = "";
+      qrPreviewInstanceRef.current.append(qrWrapperPreviewRef.current);
     }
 
-    qrWrapperRef.current.innerHTML = "";
-    qrCodeInstanceRef.current.append(qrWrapperRef.current);
+    // EXPORT instance (exact size, hidden DOM)
+    if (!qrExportInstanceRef.current) {
+      qrExportInstanceRef.current = new QRStylingAny(options);
+    } else {
+      qrExportInstanceRef.current.update(options);
+    }
+    if (qrWrapperExportRef.current) {
+      qrWrapperExportRef.current.innerHTML = "";
+      qrExportInstanceRef.current.append(qrWrapperExportRef.current);
+    }
   }, [
     wizardStep,
     size,
@@ -989,9 +1008,10 @@ export default function ActiveCodes() {
 
     const safeName = (qrTitle || `${selectedType}-qr`).replace(/\s+/g, "-");
 
+    // If no frame, let qr-code-styling download exact size
     if (frameStyle === "none") {
-      if (!qrCodeInstanceRef.current) return;
-      qrCodeInstanceRef.current.download({
+      if (!qrExportInstanceRef.current) return;
+      qrExportInstanceRef.current.download({
         name: safeName,
         extension: downloadFormat,
       });
@@ -999,18 +1019,15 @@ export default function ActiveCodes() {
       return;
     }
 
+    // Frame export uses hidden exact-size DOM
     if (!frameExportRef.current) return;
 
     try {
       if (downloadFormat === "png") {
         const dataUrl = await toPng(frameExportRef.current, {
           cacheBust: true,
-          pixelRatio: 2,
+          pixelRatio: 1, // ✅ exact pixels == DOM pixels (selected size stays correct)
           backgroundColor: "#ffffff",
-          skipFonts: true,
-          canvasWidth: frameExportRef.current.offsetWidth * 2,
-          canvasHeight: frameExportRef.current.offsetHeight * 2,
-          filter: () => true,
         });
         downloadDataUrl(dataUrl, `${safeName}.png`);
       } else {
@@ -1125,6 +1142,10 @@ export default function ActiveCodes() {
       { key: "File", label: "File" },
       { key: "Multi-URL", label: "Multi-URL" },
     ];
+
+    // Keep Step1 preview safe too
+    const step1Max = 220;
+    const step1Scale = Math.min(1, step1Max / (size || 256));
 
     return (
       <div className="flex gap-6 p-6">
@@ -1764,12 +1785,28 @@ export default function ActiveCodes() {
         {/* Right: simple SVG preview + next */}
         <div className="w-80 bg-gray-50 rounded-lg flex flex-col items-center justify-between py-6 px-4">
           <div className="bg-white rounded-lg p-4 shadow-sm mb-4">
-            <QRCodeSVG
-              value={getContentForType() || "https://example.com"}
-              size={size}
-              fgColor={fgColor}
-              bgColor={bgColor}
-            />
+            <div
+              style={{
+                width: (size || 256) * step1Scale,
+                height: (size || 256) * step1Scale,
+              }}
+            >
+              <div
+                style={{
+                  transform: `scale(${step1Scale})`,
+                  transformOrigin: "top left",
+                  width: size,
+                  height: size,
+                }}
+              >
+                <QRCodeSVG
+                  value={getContentForType() || "https://example.com"}
+                  size={size}
+                  fgColor={fgColor}
+                  bgColor={bgColor}
+                />
+              </div>
+            </div>
           </div>
           <button
             type="button"
@@ -2063,6 +2100,7 @@ export default function ActiveCodes() {
               })}
             </div>
           </section>
+
           {/* ✅ NEW: TOGGLES SECTION */}
           <section className="space-y-3">
             <h4 className="text-xs font-semibold text-gray-700">
@@ -2147,50 +2185,66 @@ export default function ActiveCodes() {
         {/* Right: styled preview + controls */}
         <div className="w-80 bg-gray-50 rounded-lg flex flex-col items-center justify-between py-6 px-4">
           <div
-            ref={frameExportRef}
+            ref={framePreviewRef}
             className={`mb-4 w-full flex flex-col items-center ${frameClass}`}
           >
-            <div className="relative">
+            <div
+              className="relative"
+              style={{
+                width: (size || 256) * previewScale,
+                height: (size || 256) * previewScale,
+              }}
+            >
               <div
-                className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
-                style={{ width: size, height: size }}
+                className="relative"
+                style={{
+                  width: size,
+                  height: size,
+                  transform: `scale(${previewScale})`,
+                  transformOrigin: "top left",
+                }}
               >
-                <div ref={qrWrapperRef} />
-              </div>
-
-              {/* ✅ Watermark (admin + user toggle) */}
-              {showWatermark && (
                 <div
-                  className={`absolute ${
-                    watermarkSettings.position === "bottom-right"
-                      ? "bottom-2 right-2"
-                      : watermarkSettings.position === "bottom-left"
-                      ? "bottom-2 left-2"
-                      : "bottom-2 left-1/2 -translate-x-1/2"
-                  } ${
-                    watermarkSettings.size === "small"
-                      ? "text-[8px] px-1.5 py-0.5"
-                      : watermarkSettings.size === "large"
-                      ? "text-xs px-2.5 py-1.5"
-                      : "text-[10px] px-2 py-1"
-                  } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
-                  style={{ opacity: watermarkSettings.opacity }}
+                  className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
+                  style={{ width: size, height: size }}
                 >
-                  {watermarkSettings.logoUrl && (
-                    <img
-                      src={watermarkSettings.logoUrl}
-                      alt="watermark"
-                      className="h-3 w-auto object-contain"
-                      crossOrigin="anonymous"
-                    />
-                  )}
-                  {watermarkSettings.text && (
-                    <span className="text-gray-700 font-medium whitespace-nowrap">
-                      {watermarkSettings.text}
-                    </span>
-                  )}
+                  <div ref={qrWrapperPreviewRef} />
                 </div>
-              )}
+
+                {/* ✅ Watermark (admin + user toggle) */}
+                {showWatermark && (
+                  <div
+                    className={`absolute ${
+                      watermarkSettings.position === "bottom-right"
+                        ? "bottom-2 right-2"
+                        : watermarkSettings.position === "bottom-left"
+                        ? "bottom-2 left-2"
+                        : "bottom-2 left-1/2 -translate-x-1/2"
+                    } ${
+                      watermarkSettings.size === "small"
+                        ? "text-[8px] px-1.5 py-0.5"
+                        : watermarkSettings.size === "large"
+                        ? "text-xs px-2.5 py-1.5"
+                        : "text-[10px] px-2 py-1"
+                    } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
+                    style={{ opacity: watermarkSettings.opacity }}
+                  >
+                    {watermarkSettings.logoUrl && (
+                      <img
+                        src={watermarkSettings.logoUrl}
+                        alt="watermark"
+                        className="h-3 w-auto object-contain"
+                        crossOrigin="anonymous"
+                      />
+                    )}
+                    {watermarkSettings.text && (
+                      <span className="text-gray-700 font-medium whitespace-nowrap">
+                        {watermarkSettings.text}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {showFooter && (
@@ -2204,6 +2258,68 @@ export default function ActiveCodes() {
                 POWERED BY YOUR BRAND
               </div>
             )}
+          </div>
+
+          {/* ✅ Hidden exact-size export node */}
+          <div className="fixed -left-[99999px] top-0 opacity-0 pointer-events-none">
+            <div
+              ref={frameExportRef}
+              className={`w-fit flex flex-col items-center ${frameClass}`}
+            >
+              <div className="relative">
+                <div
+                  className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
+                  style={{ width: size, height: size }}
+                >
+                  <div ref={qrWrapperExportRef} />
+                </div>
+
+                {showWatermark && (
+                  <div
+                    className={`absolute ${
+                      watermarkSettings.position === "bottom-right"
+                        ? "bottom-2 right-2"
+                        : watermarkSettings.position === "bottom-left"
+                        ? "bottom-2 left-2"
+                        : "bottom-2 left-1/2 -translate-x-1/2"
+                    } ${
+                      watermarkSettings.size === "small"
+                        ? "text-[8px] px-1.5 py-0.5"
+                        : watermarkSettings.size === "large"
+                        ? "text-xs px-2.5 py-1.5"
+                        : "text-[10px] px-2 py-1"
+                    } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
+                    style={{ opacity: watermarkSettings.opacity }}
+                  >
+                    {watermarkSettings.logoUrl && (
+                      <img
+                        src={watermarkSettings.logoUrl}
+                        alt="watermark"
+                        className="h-3 w-auto object-contain"
+                        crossOrigin="anonymous"
+                      />
+                    )}
+                    {watermarkSettings.text && (
+                      <span className="text-gray-700 font-medium whitespace-nowrap">
+                        {watermarkSettings.text}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {showFooter && (
+                <div
+                  className={`mt-3 text-[10px] tracking-[0.16em] uppercase text-center ${
+                    frameStyle === "dark-badge"
+                      ? "text-gray-300"
+                      : "text-gray-400"
+                  }`}
+                >
+                  POWERED BY YOUR BRAND
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex w-full gap-2 mt-2">
@@ -2321,51 +2437,63 @@ export default function ActiveCodes() {
         </div>
 
         <div className="w-80 bg-gray-50 rounded-lg flex flex-col items-center justify-center py-6 px-4">
-          <div
-            ref={frameExportRef}
-            className={`w-full flex flex-col items-center ${frameClass}`}
-          >
-            <div className="relative">
+          <div className={`w-full flex flex-col items-center ${frameClass}`}>
+            <div
+              className="relative"
+              style={{
+                width: (size || 256) * previewScale,
+                height: (size || 256) * previewScale,
+              }}
+            >
               <div
-                className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
-                style={{ width: size, height: size }}
+                className="relative"
+                style={{
+                  width: size,
+                  height: size,
+                  transform: `scale(${previewScale})`,
+                  transformOrigin: "top left",
+                }}
               >
-                <div ref={qrWrapperRef} />
-              </div>
-
-              {/* ✅ Watermark (admin + user toggle) */}
-              {showWatermark && (
                 <div
-                  className={`absolute ${
-                    watermarkSettings.position === "bottom-right"
-                      ? "bottom-2 right-2"
-                      : watermarkSettings.position === "bottom-left"
-                      ? "bottom-2 left-2"
-                      : "bottom-2 left-1/2 -translate-x-1/2"
-                  } ${
-                    watermarkSettings.size === "small"
-                      ? "text-[8px] px-1.5 py-0.5"
-                      : watermarkSettings.size === "large"
-                      ? "text-xs px-2.5 py-1.5"
-                      : "text-[10px] px-2 py-1"
-                  } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
-                  style={{ opacity: watermarkSettings.opacity }}
+                  className="bg-white rounded-2xl overflow-hidden flex items-center justify-center"
+                  style={{ width: size, height: size }}
                 >
-                  {watermarkSettings.logoUrl && (
-                    <img
-                      src={watermarkSettings.logoUrl}
-                      alt="watermark"
-                      className="h-3 w-auto object-contain"
-                      crossOrigin="anonymous"
-                    />
-                  )}
-                  {watermarkSettings.text && (
-                    <span className="text-gray-700 font-medium whitespace-nowrap">
-                      {watermarkSettings.text}
-                    </span>
-                  )}
+                  <div ref={qrWrapperPreviewRef} />
                 </div>
-              )}
+
+                {showWatermark && (
+                  <div
+                    className={`absolute ${
+                      watermarkSettings.position === "bottom-right"
+                        ? "bottom-2 right-2"
+                        : watermarkSettings.position === "bottom-left"
+                        ? "bottom-2 left-2"
+                        : "bottom-2 left-1/2 -translate-x-1/2"
+                    } ${
+                      watermarkSettings.size === "small"
+                        ? "text-[8px] px-1.5 py-0.5"
+                        : watermarkSettings.size === "large"
+                        ? "text-xs px-2.5 py-1.5"
+                        : "text-[10px] px-2 py-1"
+                    } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
+                    style={{ opacity: watermarkSettings.opacity }}
+                  >
+                    {watermarkSettings.logoUrl && (
+                      <img
+                        src={watermarkSettings.logoUrl}
+                        alt="watermark"
+                        className="h-3 w-auto object-contain"
+                        crossOrigin="anonymous"
+                      />
+                    )}
+                    {watermarkSettings.text && (
+                      <span className="text-gray-700 font-medium whitespace-nowrap">
+                        {watermarkSettings.text}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {showFooter && (
