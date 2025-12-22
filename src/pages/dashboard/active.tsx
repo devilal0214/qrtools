@@ -23,10 +23,10 @@ import {
   addDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { uploadFile } from "../../utils/fileUpload";
 
 import { EyeIcon, PencilIcon, PauseIcon } from "@heroicons/react/24/outline";
-import { MdOutlineBrandingWatermark } from "react-icons/md";
-import { MdCampaign } from "react-icons/md";
+import { MdOutlineBrandingWatermark, MdCampaign } from "react-icons/md";
 import { QRCodeSVG } from "qrcode.react";
 
 // @ts-ignore – qr-code-styling has no official TS types in many setups
@@ -48,8 +48,6 @@ interface QRCode {
   isActive: boolean;
   title?: string;
   mode?: "static" | "dynamic";
-
-  // ✅ NEW: Scan tracking toggle per QR
   trackScans?: boolean;
 
   settings?: {
@@ -61,10 +59,9 @@ interface QRCode {
     logoPreset?: string | null;
     patternStyle?: PatternStyle;
     frameStyle?: FrameStyle;
-
-    // ✅ NEW: Watermark toggle per QR (preview + export)
     watermarkEnabled?: boolean;
   };
+
   campaign?: {
     enabled: boolean;
     utmSource?: string;
@@ -178,11 +175,67 @@ const downloadSvgString = (svgString: string, filename: string) => {
   URL.revokeObjectURL(url);
 };
 
+/* ------------------------------------------------------------------ */
+/* ✅ SAME SOCIAL TAB UI (icons + scroll + selected platform)          */
+/* ------------------------------------------------------------------ */
+const SOCIAL_PLATFORMS = [
+  {
+    key: "facebook",
+    label: "Facebook",
+    icon: (
+      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 2.103-.287 1.564h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.628 3.874 10.35 9.101 11.647Z" />
+      </svg>
+    ),
+  },
+  {
+    key: "twitter",
+    label: "Twitter/X",
+    icon: (
+      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+      </svg>
+    ),
+  },
+  {
+    key: "instagram",
+    label: "Instagram",
+    icon: (
+      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M12 2c-2.716 0-3.056.012-4.123.06-1.064.049-1.791.218-2.427.465a4.901 4.901 0 0 0-1.772 1.153A4.902 4.902 0 0 0 2.525 5.45c-.247.636-.416 1.363-.465 2.427C2.012 8.944 2 9.284 2 12s.012 3.056.06 4.123c.049 1.064.218 1.791.465 2.427a4.902 4.902 0 0 0 1.153 1.772 4.901 4.901 0 0 0 1.772 1.153c.636.247 1.363.416 2.427.465 1.067.048 1.407.06 4.123.06s3.056-.012 4.123-.06c1.064-.049 1.791-.218 2.427-.465a4.902 4.902 0 0 0 1.772-1.153 4.902 4.902 0 0 0 1.153-1.772c.247-.636.416-1.363.465-2.427.048-1.067.06-1.407.06-4.123s-.012-3.056-.06-4.123c-.049-1.064-.218-1.791-.465-2.427a4.902 4.902 0 0 0-1.153-1.772 4.901 4.901 0 0 0-1.772-1.153c-.636-.247-1.363-.416-2.427-.465C15.056 2.012 14.716 2 12 2zm0 1.802c2.67 0 2.986.01 4.04.058.975.045 1.505.207 1.858.344.467.182.8.399 1.15.748.35.35.566.683.748 1.15.137.353.3.883.344 1.857.048 1.055.058 1.37.058 4.041 0 2.67-.01 2.986-.058 4.04-.045.975-.207 1.505-.344 1.858a3.1 3.1 0 0 1-.748 1.15c-.35.35-.683.566-1.15.748-.353.137-.883.3-1.857.344-1.054.048-1.37.058-4.041.058-2.67 0-2.987-.01-4.04-.058-.975-.045-1.505-.207-1.858-.344a3.098 3.098 0 0 1-1.15-.748 3.098 3.098 0 0 1-.748-1.15c-.137-.353-.3-.883-.344-1.857-.048-1.055-.058-1.37-.058-4.041 0-2.67.01-2.986.058-4.04.045-.975.207-1.505.344-1.858.182-.467.399-.8.748-1.15.35-.35.683-.566 1.15-.748.353-.137.883-.3 1.857-.344 1.055-.048 1.37-.058 4.041-.058zM12 15.333a3.333 3.333 0 1 1 0-6.666 3.333 3.333 0 0 1 0 6.666zM12 6.865a5.135 5.135 0 1 0 0 10.27 5.135 5.135 0 0 0 0-10.27zM18.538 6.662a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0z" />
+      </svg>
+    ),
+  },
+  {
+    key: "whatsapp",
+    label: "WhatsApp",
+    icon: (
+      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884" />
+      </svg>
+    ),
+  },
+  {
+    key: "linkedin",
+    label: "LinkedIn",
+    icon: (
+      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+      </svg>
+    ),
+  },
+] as const;
+
+type SocialKey = (typeof SOCIAL_PLATFORMS)[number]["key"];
+type SocialData = { selectedPlatform: SocialKey } & Partial<
+  Record<SocialKey, string>
+>;
+
 export default function ActiveCodes() {
   const router = useRouter();
   const { user } = useAuth();
   const { canUseFeature, planName, isTrialActive } = usePlanFeatures();
-  const isPremium = planName !== 'Free' || isTrialActive;
+  const isPremium = planName !== "Free" || isTrialActive;
 
   // ---------- LIST STATE ----------
   const [codes, setCodes] = useState<QRCode[]>([]);
@@ -207,7 +260,7 @@ export default function ActiveCodes() {
   const [selectedType, setSelectedType] = useState<string>("URL");
   const [qrTitle, setQrTitle] = useState<string>("");
 
-  // ✅ Edit mode (wizard edit like your other file)
+  // ✅ Edit mode (wizard edit)
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // URL
@@ -237,12 +290,13 @@ export default function ActiveCodes() {
   const [contactCompany, setContactCompany] = useState<string>("");
   const [contactNote, setContactNote] = useState<string>("");
 
-  // Socials
-  const [socialMainUrl, setSocialMainUrl] = useState<string>("");
-  const [socialInstagram, setSocialInstagram] = useState<string>("");
-  const [socialFacebook, setSocialFacebook] = useState<string>("");
-  const [socialX, setSocialX] = useState<string>("");
-  const [socialLinkedIn, setSocialLinkedIn] = useState<string>("");
+  // ✅ Socials (NEW: same UI behaviour)
+  const [selectedSocialPlatform, setSelectedSocialPlatform] =
+    useState<SocialKey>("facebook");
+  const socialContainerRef = useRef<HTMLDivElement | null>(null);
+  const [socialsData, setSocialsData] = useState<SocialData>({
+    selectedPlatform: "facebook",
+  });
 
   // App
   const [appUniversalLink, setAppUniversalLink] = useState<string>("");
@@ -302,7 +356,7 @@ export default function ActiveCodes() {
   const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(true);
   const [scanTrackingEnabled, setScanTrackingEnabled] = useState<boolean>(true);
 
-  // ✅ NEW: preview/export separation to prevent overflow + get exact export size
+  // ✅ preview/export refs
   const qrWrapperPreviewRef = useRef<HTMLDivElement | null>(null);
   const qrWrapperExportRef = useRef<HTMLDivElement | null>(null);
 
@@ -312,8 +366,128 @@ export default function ActiveCodes() {
   const framePreviewRef = useRef<HTMLDivElement | null>(null);
   const frameExportRef = useRef<HTMLDivElement | null>(null);
 
-  const PREVIEW_MAX = 240; // keep sidebar preview neat
+  const PREVIEW_MAX = 240;
   const previewScale = Math.min(1, PREVIEW_MAX / (size || 256));
+
+  const scrollSocials = (direction: "left" | "right") => {
+    if (!socialContainerRef.current) return;
+    const scrollAmount = 200;
+    socialContainerRef.current.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+  };
+
+  const handleSocialUrlChange = (platform: SocialKey, url: string) => {
+    setSocialsData((prev) => ({
+      ...prev,
+      selectedPlatform: platform,
+      [platform]: url,
+    }));
+  };
+
+  const renderSocialsInput = () => {
+    const activeLabel =
+      SOCIAL_PLATFORMS.find((p) => p.key === selectedSocialPlatform)?.label ||
+      "Social";
+
+    return (
+      <div className="space-y-6">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => scrollSocials("left")}
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/80 rounded-full shadow-md hover:bg-gray-50"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+
+          <div
+            ref={socialContainerRef}
+            className="flex gap-4 overflow-x-auto scrollbar-hide scroll-smooth px-10"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {SOCIAL_PLATFORMS.map(({ key, label, icon }) => (
+              <button
+                type="button"
+                key={key}
+                onClick={() => {
+                  setSelectedSocialPlatform(key);
+                  setSocialsData((prev) => ({
+                    ...prev,
+                    selectedPlatform: key,
+                  }));
+                }}
+                className={`flex-shrink-0 flex flex-col items-center gap-1.5 p-2 rounded-lg transition-all w-20
+                  ${
+                    selectedSocialPlatform === key
+                      ? "bg-blue-50 text-blue-600 ring-2 ring-blue-600 ring-offset-2"
+                      : "text-gray-500 hover:bg-gray-50"
+                  }`}
+              >
+                <div className="w-6 h-6">{icon}</div>
+                <span className="text-xs font-medium whitespace-nowrap">
+                  {label}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => scrollSocials("right")}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/80 rounded-full shadow-md hover:bg-gray-50"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">
+            {activeLabel} URL
+          </label>
+          <input
+            type="url"
+            value={(socialsData[selectedSocialPlatform] as string) || ""}
+            onChange={(e) =>
+              handleSocialUrlChange(selectedSocialPlatform, e.target.value)
+            }
+            className="w-full px-4 py-2 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder={`Enter your ${activeLabel} profile URL`}
+          />
+
+          <p className="text-[11px] text-gray-500">
+            Tip: Add multiple platforms (switch icons, paste links). QR will
+            store all links.
+          </p>
+        </div>
+      </div>
+    );
+  };
 
   const handleLogoUpload = async (file: File | null) => {
     if (!file) return;
@@ -332,12 +506,45 @@ export default function ActiveCodes() {
       const dataUrl = await fileToDataUrl(file);
       setUploadedLogoDataUrl(dataUrl);
       setUploadedLogoName(file.name);
-
-      // If upload logo, remove presets
       setLogoPreset(null);
     } catch (e) {
       console.error(e);
       alert("Logo upload failed. Try another file.");
+    }
+  };
+
+  const handlePdfUpload = async (file: File | null) => {
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      alert("Please upload a PDF file.");
+      return;
+    }
+
+    try {
+      const url = await uploadFile(file, {
+        allowedTypes: ["application/pdf"],
+        folder: "pdfs",
+      } as any);
+      setPdfUrl(url);
+    } catch (e) {
+      console.error(e);
+      alert("PDF upload failed. Try again.");
+    }
+  };
+
+  const handleFileUpload = async (file: File | null) => {
+    if (!file) return;
+
+    try {
+      const url = await uploadFile(file, {
+        allowedTypes: ["*/*"],
+        folder: "files",
+      } as any);
+      setFileUrl(url);
+    } catch (e) {
+      console.error(e);
+      alert("File upload failed. Try again.");
     }
   };
 
@@ -377,9 +584,7 @@ export default function ActiveCodes() {
         const settingsDoc = await getDoc(doc(db, "settings", "config"));
         if (settingsDoc.exists()) {
           const data = settingsDoc.data();
-          if (data.watermark) {
-            setWatermarkSettings(data.watermark);
-          }
+          if (data.watermark) setWatermarkSettings(data.watermark);
         }
       } catch (error) {
         console.error("Dashboard - Error fetching watermark settings:", error);
@@ -396,7 +601,64 @@ export default function ActiveCodes() {
   }, [watermarkSettings]);
 
   // ---------- LIST HANDLERS ----------
-  // ✅ Wizard edit (NO POPUP): fills step-1 fields just like your other code
+  const resetWizard = () => {
+    setWizardStep(1);
+    setSelectedType("URL");
+    setQrTitle("");
+    setEditingId(null);
+
+    setUrlValue("");
+    setPlainTextValue("");
+    setEmailAddress("");
+    setEmailSubject("");
+    setEmailBody("");
+    setSmsNumber("");
+    setSmsMessage("");
+    setLocationLat("");
+    setLocationLng("");
+    setLocationAddress("");
+    setContactName("");
+    setContactPhone("");
+    setContactEmail("");
+    setContactCompany("");
+    setContactNote("");
+
+    // ✅ socials reset
+    setSelectedSocialPlatform("facebook");
+    setSocialsData({ selectedPlatform: "facebook" });
+
+    setAppUniversalLink("");
+    setAppIosUrl("");
+    setAppAndroidUrl("");
+    setAppWebUrl("");
+    setPdfUrl("");
+    setFileUrl("");
+    setMultiUrls([{ url: "", title: "" }]);
+    setMultiUrlTitle("My Links");
+
+    setCampaignEnabled(false);
+    setCampaignSource("");
+    setCampaignMedium("");
+    setCampaignName("");
+
+    setMode("dynamic");
+    setFgColor("#000000");
+    setBgColor("#ffffff");
+    setSize(256);
+    setLogoPreset(null);
+    setFrameStyle("none");
+    setPatternStyle("classic");
+
+    setUploadedLogoDataUrl(null);
+    setUploadedLogoName("");
+
+    setDownloadFormat("png");
+
+    setScanTrackingEnabled(true);
+    setWatermarkEnabled(watermarkSettings?.enabled === false ? false : true);
+  };
+
+  // ✅ Wizard edit
   const handleEditClick = (qrCode: QRCode) => {
     resetWizard();
     setEditingId(qrCode.id);
@@ -417,7 +679,6 @@ export default function ActiveCodes() {
     setUploadedLogoDataUrl(qrCode.settings?.logoImage || null);
     setUploadedLogoName(qrCode.settings?.logoImage ? "uploaded-logo" : "");
 
-    // ✅ NEW toggles (fallbacks)
     const wm = qrCode.settings?.watermarkEnabled;
     setWatermarkEnabled(
       watermarkSettings?.enabled === false
@@ -431,7 +692,6 @@ export default function ActiveCodes() {
       qrCode.trackScans === undefined ? true : !!qrCode.trackScans
     );
 
-    // campaign fields
     setCampaignEnabled(!!qrCode.campaign?.enabled);
     setCampaignSource(qrCode.campaign?.utmSource || "");
     setCampaignMedium(qrCode.campaign?.utmMedium || "");
@@ -485,19 +745,32 @@ export default function ActiveCodes() {
       setContactNote((content.match(/NOTE:(.*)/)?.[1] || "").trim());
     }
 
+    // ✅ Socials: NEW format JSON first, fallback to old line format
     if (qrCode.type === "Socials") {
-      const lines = content.split("\n");
-      for (const line of lines) {
-        if (line.startsWith("Main:"))
-          setSocialMainUrl(line.replace("Main:", "").trim());
-        if (line.startsWith("Instagram:"))
-          setSocialInstagram(line.replace("Instagram:", "").trim());
-        if (line.startsWith("Facebook:"))
-          setSocialFacebook(line.replace("Facebook:", "").trim());
-        if (line.startsWith("X (Twitter):"))
-          setSocialX(line.replace("X (Twitter):", "").trim());
-        if (line.startsWith("LinkedIn:"))
-          setSocialLinkedIn(line.replace("LinkedIn:", "").trim());
+      try {
+        const parsed = JSON.parse(content || "{}") as SocialData;
+        const selected = (parsed.selectedPlatform || "facebook") as SocialKey;
+        setSelectedSocialPlatform(selected);
+        setSocialsData({
+          selectedPlatform: selected,
+          ...parsed,
+        });
+      } catch {
+        // old format fallback
+        const lines = content.split("\n");
+        const obj: SocialData = { selectedPlatform: "facebook" };
+        for (const line of lines) {
+          const [k, ...rest] = line.split(":");
+          const v = rest.join(":").trim();
+          if (!v) continue;
+          if (k.trim().toLowerCase() === "instagram") obj.instagram = v;
+          if (k.trim().toLowerCase() === "facebook") obj.facebook = v;
+          if (k.trim().toLowerCase().includes("twitter")) obj.twitter = v;
+          if (k.trim().toLowerCase() === "linkedin") obj.linkedin = v;
+          if (k.trim().toLowerCase() === "whatsapp") obj.whatsapp = v;
+        }
+        setSelectedSocialPlatform("facebook");
+        setSocialsData(obj);
       }
     }
 
@@ -519,7 +792,6 @@ export default function ActiveCodes() {
     if (qrCode.type === "File") setFileUrl(content);
 
     if (qrCode.type === "Multi-URL") {
-      // stored as JSON string in your create logic
       try {
         const parsed = JSON.parse(content || "{}");
         setMultiUrlTitle(parsed.title || "My Links");
@@ -535,18 +807,15 @@ export default function ActiveCodes() {
           setMultiUrls([{ url: "", title: "" }]);
         }
       } catch {
-        // fallback (if old stored format)
         setMultiUrls([{ url: "", title: "" }]);
       }
     }
 
-    // optional scroll top
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
 
-  // (kept as-is) modal update handler if you still use EditQRModal somewhere else
   const handleUpdateQR = async (updatedQR: QRCode) => {
     try {
       setLoading(true);
@@ -609,14 +878,13 @@ export default function ActiveCodes() {
         );
       case "Contact":
         return contactName.trim().length > 0 || contactPhone.trim().length > 0;
-      case "Socials":
-        return (
-          socialMainUrl.trim().length > 0 ||
-          socialInstagram.trim().length > 0 ||
-          socialFacebook.trim().length > 0 ||
-          socialX.trim().length > 0 ||
-          socialLinkedIn.trim().length > 0
-        );
+      case "Socials": {
+        const anyUrl = SOCIAL_PLATFORMS.some((p) => {
+          const v = (socialsData[p.key] as string) || "";
+          return v.trim().length > 0;
+        });
+        return anyUrl;
+      }
       case "App":
         return (
           appUniversalLink.trim().length > 0 ||
@@ -651,7 +919,6 @@ export default function ActiveCodes() {
 
   const getContentForType = (): string => {
     if (selectedType === "URL") return urlValue.trim();
-
     if (selectedType === "Plain Text") return plainTextValue.trim();
 
     if (selectedType === "Email") {
@@ -708,17 +975,18 @@ export default function ActiveCodes() {
       return vcard;
     }
 
+    // ✅ Socials content now stored as JSON (so it works like your other Social tab)
     if (selectedType === "Socials") {
-      const lines: string[] = [];
-      if (socialMainUrl.trim()) lines.push(`Main: ${socialMainUrl.trim()}`);
-      if (socialInstagram.trim())
-        lines.push(`Instagram: ${socialInstagram.trim()}`);
-      if (socialFacebook.trim())
-        lines.push(`Facebook: ${socialFacebook.trim()}`);
-      if (socialX.trim()) lines.push(`X (Twitter): ${socialX.trim()}`);
-      if (socialLinkedIn.trim())
-        lines.push(`LinkedIn: ${socialLinkedIn.trim()}`);
-      return lines.join("\n");
+      const payload: SocialData = {
+        selectedPlatform: selectedSocialPlatform,
+      };
+
+      SOCIAL_PLATFORMS.forEach((p) => {
+        const v = (socialsData[p.key] as string) || "";
+        if (v.trim()) (payload as any)[p.key] = v.trim();
+      });
+
+      return JSON.stringify(payload);
     }
 
     if (selectedType === "App") {
@@ -743,64 +1011,6 @@ export default function ActiveCodes() {
     }
 
     return "";
-  };
-
-  const resetWizard = () => {
-    setWizardStep(1);
-    setSelectedType("URL");
-    setQrTitle("");
-    setEditingId(null);
-
-    setUrlValue("");
-    setPlainTextValue("");
-    setEmailAddress("");
-    setEmailSubject("");
-    setEmailBody("");
-    setSmsNumber("");
-    setSmsMessage("");
-    setLocationLat("");
-    setLocationLng("");
-    setLocationAddress("");
-    setContactName("");
-    setContactPhone("");
-    setContactEmail("");
-    setContactCompany("");
-    setContactNote("");
-    setSocialMainUrl("");
-    setSocialInstagram("");
-    setSocialFacebook("");
-    setSocialX("");
-    setSocialLinkedIn("");
-    setAppUniversalLink("");
-    setAppIosUrl("");
-    setAppAndroidUrl("");
-    setAppWebUrl("");
-    setPdfUrl("");
-    setFileUrl("");
-    setMultiUrls([{ url: "", title: "" }]);
-    setMultiUrlTitle("My Links");
-
-    setCampaignEnabled(false);
-    setCampaignSource("");
-    setCampaignMedium("");
-    setCampaignName("");
-
-    setMode("dynamic");
-    setFgColor("#000000");
-    setBgColor("#ffffff");
-    setSize(256);
-    setLogoPreset(null);
-    setFrameStyle("none");
-    setPatternStyle("classic");
-
-    setUploadedLogoDataUrl(null);
-    setUploadedLogoName("");
-
-    setDownloadFormat("png");
-
-    // ✅ reset toggles
-    setScanTrackingEnabled(true);
-    setWatermarkEnabled(watermarkSettings?.enabled === false ? false : true);
   };
 
   // ✅ Save / Update
@@ -837,10 +1047,7 @@ export default function ActiveCodes() {
         content,
         updatedAt: now,
         mode,
-
-        // ✅ NEW: persist scan tracking on QR doc
         trackScans: scanTrackingEnabled,
-
         settings: {
           size,
           fgColor,
@@ -850,15 +1057,12 @@ export default function ActiveCodes() {
           logoImage: uploadedLogoDataUrl || null,
           frameStyle,
           patternStyle,
-
-          // ✅ NEW: persist watermark toggle in settings
           watermarkEnabled:
             watermarkSettings?.enabled === false ? false : watermarkEnabled,
         },
         ...(campaignData && { campaign: campaignData }),
       };
 
-      // ✅ EDIT MODE
       if (editingId) {
         const qrRef = doc(db, "qrcodes", editingId);
         await updateDoc(qrRef, payload);
@@ -879,7 +1083,6 @@ export default function ActiveCodes() {
         } as QRCode;
       }
 
-      // ✅ CREATE MODE
       const newDoc = await addDoc(collection(db, "qrcodes"), {
         ...payload,
         createdAt: now,
@@ -940,7 +1143,6 @@ export default function ActiveCodes() {
     }
   };
 
-  // ✅ Render QR into BOTH preview and export nodes (so preview never overflows & export stays exact)
   useEffect(() => {
     if (wizardStep === 1) return;
     if (typeof window === "undefined") return;
@@ -956,7 +1158,6 @@ export default function ActiveCodes() {
       dotsOptions: buildDotsOptions(patternStyle, fgColor),
       cornersSquareOptions: buildCornersSquareOptions(patternStyle, fgColor),
       cornersDotOptions: { color: fgColor, type: "dots" },
-
       image: finalLogoImage,
       imageOptions: {
         crossOrigin: "anonymous",
@@ -964,13 +1165,11 @@ export default function ActiveCodes() {
         imageSize: finalLogoImage ? 0.28 : 0,
         hideBackgroundDots: !!finalLogoImage,
       },
-
       margin: 0,
     };
 
     const QRStylingAny: any = QRCodeStyling;
 
-    // PREVIEW instance
     if (!qrPreviewInstanceRef.current) {
       qrPreviewInstanceRef.current = new QRStylingAny(options);
     } else {
@@ -981,7 +1180,6 @@ export default function ActiveCodes() {
       qrPreviewInstanceRef.current.append(qrWrapperPreviewRef.current);
     }
 
-    // EXPORT instance (exact size, hidden DOM)
     if (!qrExportInstanceRef.current) {
       qrExportInstanceRef.current = new QRStylingAny(options);
     } else {
@@ -1002,14 +1200,12 @@ export default function ActiveCodes() {
     uploadedLogoDataUrl,
   ]);
 
-  // ✅ Download = Save/Update + Download (WITH FRAME INCLUDED)
   const handleDownload = async () => {
     const saved = await saveQRCodeToFirestore();
     if (!saved) return;
 
     const safeName = (qrTitle || `${selectedType}-qr`).replace(/\s+/g, "-");
 
-    // If no frame, let qr-code-styling download exact size
     if (frameStyle === "none") {
       if (!qrExportInstanceRef.current) return;
       qrExportInstanceRef.current.download({
@@ -1020,14 +1216,13 @@ export default function ActiveCodes() {
       return;
     }
 
-    // Frame export uses hidden exact-size DOM
     if (!frameExportRef.current) return;
 
     try {
       if (downloadFormat === "png") {
         const dataUrl = await toPng(frameExportRef.current, {
           cacheBust: true,
-          pixelRatio: 1, // ✅ exact pixels == DOM pixels (selected size stays correct)
+          pixelRatio: 1,
           backgroundColor: "#ffffff",
         });
         downloadDataUrl(dataUrl, `${safeName}.png`);
@@ -1086,7 +1281,6 @@ export default function ActiveCodes() {
     }
   };
 
-  // ---------- WIZARD UI ----------
   const renderStepNav = () => (
     <div className="flex items-center justify-center gap-6 py-3 border-b bg-white rounded-t-xl">
       {[
@@ -1144,7 +1338,6 @@ export default function ActiveCodes() {
       { key: "Multi-URL", label: "Multi-URL" },
     ];
 
-    // Keep Step1 preview safe too
     const step1Max = 220;
     const step1Scale = Math.min(1, step1Max / (size || 256));
 
@@ -1191,7 +1384,6 @@ export default function ActiveCodes() {
                 />
               </div>
 
-              {/* Campaign URL Tracking */}
               <div className="border-t pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
@@ -1263,19 +1455,6 @@ export default function ActiveCodes() {
                         The specific campaign name
                       </p>
                     </div>
-
-                    {campaignSource && campaignMedium && campaignName && (
-                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
-                        <p className="text-xs font-medium text-blue-900 mb-1">
-                          Preview URL:
-                        </p>
-                        <p className="text-xs font-mono text-blue-700 break-all">
-                          {urlValue || "https://example.com"}?utm_source=
-                          {campaignSource}&utm_medium={campaignMedium}
-                          &utm_campaign={campaignName}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -1423,9 +1602,6 @@ export default function ActiveCodes() {
                   className="w-full border rounded-lg px-3 py-2 text-sm"
                 />
               </div>
-              <p className="text-[11px] text-gray-400">
-                Use either precise coordinates, address or both.
-              </p>
             </div>
           )}
 
@@ -1471,103 +1647,20 @@ export default function ActiveCodes() {
                   className="w-full border rounded-lg px-3 py-2 text-sm"
                 />
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Company (optional)
-                </label>
-                <input
-                  type="text"
-                  value={contactCompany}
-                  onChange={(e) => setContactCompany(e.target.value)}
-                  placeholder="Your Brand"
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Note (optional)
-                </label>
-                <textarea
-                  value={contactNote}
-                  onChange={(e) => setContactNote(e.target.value)}
-                  rows={2}
-                  placeholder="Extra details for this contact"
-                  className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
-                />
-              </div>
             </div>
           )}
 
-          {/* Socials */}
+          {/* ✅ Socials (NEW UI) */}
           {selectedType === "Socials" && (
             <div className="mt-4 space-y-3">
               <p className="text-sm font-semibold text-gray-800 mb-1">
                 Bundle your social profiles
               </p>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Main link (Linktree / website)
-                </label>
-                <input
-                  type="text"
-                  value={socialMainUrl}
-                  onChange={(e) => setSocialMainUrl(e.target.value)}
-                  placeholder="https://yourlinktree.com/username"
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Instagram
-                  </label>
-                  <input
-                    type="text"
-                    value={socialInstagram}
-                    onChange={(e) => setSocialInstagram(e.target.value)}
-                    placeholder="https://instagram.com/yourbrand"
-                    className="w-full border rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Facebook
-                  </label>
-                  <input
-                    type="text"
-                    value={socialFacebook}
-                    onChange={(e) => setSocialFacebook(e.target.value)}
-                    placeholder="https://facebook.com/yourbrand"
-                    className="w-full border rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    X (Twitter)
-                  </label>
-                  <input
-                    type="text"
-                    value={socialX}
-                    onChange={(e) => setSocialX(e.target.value)}
-                    placeholder="https://x.com/yourbrand"
-                    className="w-full border rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    LinkedIn
-                  </label>
-                  <input
-                    type="text"
-                    value={socialLinkedIn}
-                    onChange={(e) => setSocialLinkedIn(e.target.value)}
-                    placeholder="https://linkedin.com/company/yourbrand"
-                    className="w-full border rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-              </div>
+              {renderSocialsInput()}
+              <p className="text-[11px] text-gray-400">
+                When scanned, this QR will contain your saved social URLs
+                (JSON).
+              </p>
             </div>
           )}
 
@@ -1615,18 +1708,6 @@ export default function ActiveCodes() {
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Web / landing URL (optional)
-                </label>
-                <input
-                  type="text"
-                  value={appWebUrl}
-                  onChange={(e) => setAppWebUrl(e.target.value)}
-                  placeholder="https://yourapp.com"
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
             </div>
           )}
 
@@ -1648,10 +1729,22 @@ export default function ActiveCodes() {
                   className="w-full border rounded-lg px-3 py-2 text-sm"
                 />
               </div>
-              <p className="text-[11px] text-gray-400">
-                Upload your PDF anywhere (Drive, S3, Firebase Storage) and paste
-                the public link here.
-              </p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Or upload PDF
+                </label>
+                <label className="w-[200px] bg-emerald-600 text-white rounded-lg px-3 py-2 text-sm cursor-pointer hover:bg-emerald-700 inline-block text-center">
+                  Choose PDF File
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) =>
+                      handlePdfUpload(e.target.files?.[0] || null)
+                    }
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
           )}
 
@@ -1659,7 +1752,7 @@ export default function ActiveCodes() {
           {selectedType === "File" && (
             <div className="mt-4 space-y-3">
               <p className="text-sm font-semibold text-gray-800 mb-1">
-                Link to any file (image, doc, zip, etc.)
+                Link to any file
               </p>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">
@@ -1672,6 +1765,21 @@ export default function ActiveCodes() {
                   placeholder="https://yourcdn.com/file.ext"
                   className="w-full border rounded-lg px-3 py-2 text-sm"
                 />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Or upload file
+                </label>
+                <label className="w-[200px] bg-emerald-600 text-white rounded-lg px-3 py-2 text-sm cursor-pointer hover:bg-emerald-700 inline-block text-center">
+                  Choose File
+                  <input
+                    type="file"
+                    onChange={(e) =>
+                      handleFileUpload(e.target.files?.[0] || null)
+                    }
+                    className="hidden"
+                  />
+                </label>
               </div>
             </div>
           )}
@@ -1749,10 +1857,6 @@ export default function ActiveCodes() {
                 </svg>
                 Add Link
               </button>
-
-              <p className="text-[11px] text-gray-400">
-                When scanned, users will see a landing page with all links.
-              </p>
             </div>
           )}
 
@@ -1809,6 +1913,7 @@ export default function ActiveCodes() {
               </div>
             </div>
           </div>
+
           <button
             type="button"
             onClick={handleNextStep}
@@ -1851,13 +1956,12 @@ export default function ActiveCodes() {
     const showFooter =
       frameStyle === "dark-badge" || frameStyle === "outline-tag";
 
-    // ✅ Watermark display condition (admin + user toggle)
     const showWatermark =
       !!watermarkSettings?.enabled && watermarkEnabled && !!watermarkSettings;
 
     return (
       <div className="flex gap-6 p-6">
-        {/* Left: design options */}
+        {/* Left */}
         <div className="flex-1 space-y-6">
           {/* COLORS */}
           <section className="space-y-2">
@@ -1903,7 +2007,7 @@ export default function ActiveCodes() {
             </div>
           </section>
 
-          {/* LOGO PRESETS + UPLOAD */}
+          {/* LOGO */}
           <section className="space-y-2">
             <h4 className="text-xs font-semibold text-gray-700">
               Logo{" "}
@@ -1913,7 +2017,6 @@ export default function ActiveCodes() {
             </h4>
 
             <div className="flex gap-3 flex-wrap items-center">
-              {/* Upload */}
               <label className="flex flex-col items-center justify-center w-20 h-16 rounded-lg border border-dashed border-gray-300 text-[11px] text-gray-700 bg-gray-50 cursor-pointer hover:bg-gray-100">
                 <span className="text-lg mb-1">⬆️</span>
                 <span>Upload</span>
@@ -2102,13 +2205,12 @@ export default function ActiveCodes() {
             </div>
           </section>
 
-          {/* ✅ NEW: TOGGLES SECTION */}
+          {/* TOGGLES */}
           <section className="space-y-3">
             <h4 className="text-xs font-semibold text-gray-700">
               Premium option
             </h4>
 
-            {/* Watermark toggle */}
             <div className="flex flex-col justify-between gap-5">
               <div className="flex items-center justify-between w-[440px] p-4 bg-gray-50 rounded-lg border">
                 <div>
@@ -2144,7 +2246,6 @@ export default function ActiveCodes() {
                 </label>
               </div>
 
-              {/* Track scans toggle */}
               <div className="flex items-center justify-between w-[440px] p-4 bg-gray-50 rounded-lg border">
                 <div>
                   <p className="text-sm font-semibold flex gap-1 text-gray-800">
@@ -2183,7 +2284,7 @@ export default function ActiveCodes() {
           </section>
         </div>
 
-        {/* Right: styled preview + controls */}
+        {/* Right: preview */}
         <div className="w-80 bg-gray-50 rounded-lg flex flex-col items-center justify-between py-6 px-4">
           <div
             ref={framePreviewRef}
@@ -2212,35 +2313,34 @@ export default function ActiveCodes() {
                   <div ref={qrWrapperPreviewRef} />
                 </div>
 
-                {/* ✅ Watermark (admin + user toggle) */}
                 {showWatermark && (
                   <div
                     className={`absolute ${
-                      watermarkSettings.position === "bottom-right"
+                      watermarkSettings!.position === "bottom-right"
                         ? "bottom-2 right-2"
-                        : watermarkSettings.position === "bottom-left"
+                        : watermarkSettings!.position === "bottom-left"
                         ? "bottom-2 left-2"
                         : "bottom-2 left-1/2 -translate-x-1/2"
                     } ${
-                      watermarkSettings.size === "small"
+                      watermarkSettings!.size === "small"
                         ? "text-[8px] px-1.5 py-0.5"
-                        : watermarkSettings.size === "large"
+                        : watermarkSettings!.size === "large"
                         ? "text-xs px-2.5 py-1.5"
                         : "text-[10px] px-2 py-1"
                     } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
-                    style={{ opacity: watermarkSettings.opacity }}
+                    style={{ opacity: watermarkSettings!.opacity }}
                   >
-                    {watermarkSettings.logoUrl && (
+                    {watermarkSettings!.logoUrl && (
                       <img
-                        src={watermarkSettings.logoUrl}
+                        src={watermarkSettings!.logoUrl}
                         alt="watermark"
                         className="h-3 w-auto object-contain"
                         crossOrigin="anonymous"
                       />
                     )}
-                    {watermarkSettings.text && (
+                    {watermarkSettings!.text && (
                       <span className="text-gray-700 font-medium whitespace-nowrap">
-                        {watermarkSettings.text}
+                        {watermarkSettings!.text}
                       </span>
                     )}
                   </div>
@@ -2261,7 +2361,7 @@ export default function ActiveCodes() {
             )}
           </div>
 
-          {/* ✅ Hidden exact-size export node */}
+          {/* Hidden export DOM */}
           <div className="fixed -left-[99999px] top-0 opacity-0 pointer-events-none">
             <div
               ref={frameExportRef}
@@ -2278,31 +2378,31 @@ export default function ActiveCodes() {
                 {showWatermark && (
                   <div
                     className={`absolute ${
-                      watermarkSettings.position === "bottom-right"
+                      watermarkSettings!.position === "bottom-right"
                         ? "bottom-2 right-2"
-                        : watermarkSettings.position === "bottom-left"
+                        : watermarkSettings!.position === "bottom-left"
                         ? "bottom-2 left-2"
                         : "bottom-2 left-1/2 -translate-x-1/2"
                     } ${
-                      watermarkSettings.size === "small"
+                      watermarkSettings!.size === "small"
                         ? "text-[8px] px-1.5 py-0.5"
-                        : watermarkSettings.size === "large"
+                        : watermarkSettings!.size === "large"
                         ? "text-xs px-2.5 py-1.5"
                         : "text-[10px] px-2 py-1"
                     } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
-                    style={{ opacity: watermarkSettings.opacity }}
+                    style={{ opacity: watermarkSettings!.opacity }}
                   >
-                    {watermarkSettings.logoUrl && (
+                    {watermarkSettings!.logoUrl && (
                       <img
-                        src={watermarkSettings.logoUrl}
+                        src={watermarkSettings!.logoUrl}
                         alt="watermark"
                         className="h-3 w-auto object-contain"
                         crossOrigin="anonymous"
                       />
                     )}
-                    {watermarkSettings.text && (
+                    {watermarkSettings!.text && (
                       <span className="text-gray-700 font-medium whitespace-nowrap">
-                        {watermarkSettings.text}
+                        {watermarkSettings!.text}
                       </span>
                     )}
                   </div>
@@ -2465,31 +2565,31 @@ export default function ActiveCodes() {
                 {showWatermark && (
                   <div
                     className={`absolute ${
-                      watermarkSettings.position === "bottom-right"
+                      watermarkSettings!.position === "bottom-right"
                         ? "bottom-2 right-2"
-                        : watermarkSettings.position === "bottom-left"
+                        : watermarkSettings!.position === "bottom-left"
                         ? "bottom-2 left-2"
                         : "bottom-2 left-1/2 -translate-x-1/2"
                     } ${
-                      watermarkSettings.size === "small"
+                      watermarkSettings!.size === "small"
                         ? "text-[8px] px-1.5 py-0.5"
-                        : watermarkSettings.size === "large"
+                        : watermarkSettings!.size === "large"
                         ? "text-xs px-2.5 py-1.5"
                         : "text-[10px] px-2 py-1"
                     } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
-                    style={{ opacity: watermarkSettings.opacity }}
+                    style={{ opacity: watermarkSettings!.opacity }}
                   >
-                    {watermarkSettings.logoUrl && (
+                    {watermarkSettings!.logoUrl && (
                       <img
-                        src={watermarkSettings.logoUrl}
+                        src={watermarkSettings!.logoUrl}
                         alt="watermark"
                         className="h-3 w-auto object-contain"
                         crossOrigin="anonymous"
                       />
                     )}
-                    {watermarkSettings.text && (
+                    {watermarkSettings!.text && (
                       <span className="text-gray-700 font-medium whitespace-nowrap">
-                        {watermarkSettings.text}
+                        {watermarkSettings!.text}
                       </span>
                     )}
                   </div>
@@ -2532,7 +2632,6 @@ export default function ActiveCodes() {
         </Head>
 
         <div className="space-y-6">
-          {/* PAGE HEADER */}
           <div className="flex justify-between items-center">
             <h2 className="text-2xl font-bold text-gray-800">
               Active QR Codes
@@ -2548,7 +2647,6 @@ export default function ActiveCodes() {
             </button>
           </div>
 
-          {/* WIZARD */}
           {renderWizard()}
 
           {/* SEARCH BAR */}
