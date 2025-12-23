@@ -21,6 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const form = formidable({
       uploadDir,
       keepExtensions: true,
+      maxFileSize: 50 * 1024 * 1024, // 50MB for PDFs
       filename: (name, ext, part) => {
         // Use the encrypted filename passed from the client
         return part.originalFilename || name;

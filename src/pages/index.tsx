@@ -1235,8 +1235,8 @@ export default function Home() {
 
     const size = svgSize;
     const logoScale = size / 256;
-    const logoSize = 80 * logoScale;
-    const circleRadius = 44 * logoScale;
+    const logoSize = 48 * logoScale; // Reduced to 48px to ensure scannability
+    const circleRadius = 38 * logoScale;
 
     let content = "";
 
@@ -1313,6 +1313,8 @@ export default function Home() {
         title,
         type: contentType.toUpperCase(),
         content: text,
+        mode: "dynamic", // Always use dynamic mode for tracking
+        trackScans: true,
         createdAt: new Date().toISOString(),
         scans: 0,
         isActive: true,
@@ -1690,18 +1692,16 @@ export default function Home() {
     }
 
     const qrValue = (() => {
-      if (
-        contentType === ContentTypes.SMS ||
-        contentType === ContentTypes.PHONE ||
-        contentType === ContentTypes.CONTACT
-      ) {
-        return text || "";
-      }
-
       const origin = getBaseUrl();
 
+      // If exporting, use the export value (usually the redirect URL)
       if (exportValue) return exportValue;
+      
+      // If we have a saved QR ID, always use redirect URL for tracking
+      // This works for ALL types including SMS, PHONE, CONTACT
       if (nanoId) return `${origin}/qr/${nanoId}`;
+      
+      // For preview before saving, show the actual content
       return text || "";
     })();
 
@@ -1746,13 +1746,14 @@ export default function Home() {
           className={`absolute ${positionMap[watermarkSettings.position as keyof typeof positionMap] || 'bottom-2 right-2'} 
             ${sizeMap[watermarkSettings.size as keyof typeof sizeMap] || 'text-[8px] px-1.5 py-0.5'}
             bg-white rounded flex items-center gap-1 shadow-sm z-10`}
-          style={{ opacity: watermarkSettings.opacity }}
+          style={{ opacity: watermarkSettings.opacity, maxWidth: '20%', maxHeight: '10%' }}
         >
           {watermarkSettings.logoUrl && (
             <img 
               src={watermarkSettings.logoUrl} 
               alt="watermark" 
-              className="h-3 w-auto object-contain"
+              className="h-2 w-auto object-contain"
+              style={{ maxWidth: '24px', maxHeight: '24px' }}
               crossOrigin="anonymous"
               onLoad={() => console.log('Watermark logo loaded successfully')}
               onError={(e) => console.error('Watermark logo failed to load:', e, 'URL:', watermarkSettings.logoUrl)}
@@ -2568,6 +2569,14 @@ export default function Home() {
 
               {text ? (
                 <div className="w-full space-y-3">
+                  {nanoId && (
+                    <div className="px-3 py-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
+                      <p className="text-xs text-emerald-300">
+                        ✓ QR Code saved! This QR uses a redirect URL for tracking scans and location analytics.
+                      </p>
+                    </div>
+                  )}
+                  
                   <div className="flex items-center justify-between gap-3 text-xs text-zinc-300">
                     <span>Download as</span>
                     <div className="flex gap-2">
@@ -2592,12 +2601,13 @@ export default function Home() {
                         setShowAuthModal(true);
                         return;
                       }
-                      handleDirectDownload("png");
+                      // Save first, then download with redirect URL for tracking
+                      handleDownloadAndNext("png");
                     }}
                     className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-lime-400 text-zinc-900 text-sm font-semibold hover:bg-lime-300"
                   >
                     <DownloadIcon />
-                    <span>Download QR Code</span>
+                    <span>{nanoId ? "Download QR Code" : "Save & Download QR"}</span>
                   </button>
 
                   {error && (

@@ -154,18 +154,21 @@ export default async function handler(
 
   try {
     console.log("[track-view] called for qrId:", qrId);
+    console.log("[track-view] Request headers:", {
+      'cf-connecting-ip': req.headers['cf-connecting-ip'],
+      'x-forwarded-for': req.headers['x-forwarded-for'],
+      'x-real-ip': req.headers['x-real-ip'],
+      'user-agent': req.headers['user-agent']?.substring(0, 50) + '...'
+    });
 
     if (!adminDb) {
       console.error("[track-view] adminDb not configured");
       return res.status(500).json({ error: "adminDb not configured" });
     }
 
-    // 1. Get client IP
-    const ipHeader =
-      (req.headers["x-forwarded-for"] as string | undefined) ||
-      (req.headers["x-real-ip"] as string | undefined) ||
-      (req.socket.remoteAddress as string | null) ||
-      null;
+    // 1. Get client IP using comprehensive IP detection
+    const ipHeader = getClientIp(req);
+    console.log("[track-view] Detected client IP:", ipHeader);
 
     // 2. Browser / device info from User-Agent
     const uaString = (req.headers["user-agent"] as string) || "";

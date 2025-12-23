@@ -45,5 +45,13 @@ service firebase.storage {
         request.resource.contentType.matches('image/.*') &&
         request.resource.size < 20 * 1024 * 1024; // 20MB limit
     }
+
+    // Flipbook PDFs
+    match /flipbooks/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null &&
+        request.resource.contentType == 'application/pdf' &&
+        request.resource.size < 50 * 1024 * 1024; // 50MB limit
+    }
   }
 }

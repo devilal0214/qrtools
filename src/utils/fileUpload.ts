@@ -18,20 +18,25 @@ export async function uploadFile(file: File, options: UploadOptions = {}) {
 
   console.log('Cloud name:', process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME);
   console.log('Upload preset:', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
+  
+  // Determine resource type based on file type
+  const isPdf = file.type === 'application/pdf';
+  const resourceType = isPdf ? 'raw' : 'auto';
+  
   // Create form data
   const formData = new FormData();
   formData.append('file', file);
   formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!);
   formData.append('folder', folder);
 
-  // Upload to Cloudinary
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/upload`,
-    {
-      method: 'POST',
-      body: formData,
-    }
-  );
+  // Upload to Cloudinary with correct endpoint for file type
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`;
+  
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    body: formData,
+  });
 
   if (!response.ok) {
     const errorText = await response.text();

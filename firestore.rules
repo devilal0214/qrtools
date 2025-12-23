@@ -192,5 +192,25 @@ service cloud.firestore {
           get(/databases/$(database)/documents/virtualTours/$(tourId)).data.userId == request.auth.uid;
       }
     }
+
+    /**********************
+     * FLIPBOOKS
+     **********************/
+    match /flipbooks/{flipbookId} {
+      // Public can read if flipbook is public, otherwise owner only
+      allow read: if true;
+
+      // Only authenticated users can create flipbooks
+      allow create: if request.auth != null;
+
+      // Only owner can update their flipbooks (allow view count updates)
+      allow update: if request.auth != null &&
+        (resource.data.userId == request.auth.uid || 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
+
+      // Only owner can delete their flipbooks
+      allow delete: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+    }
   }
 }

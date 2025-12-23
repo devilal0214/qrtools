@@ -1110,7 +1110,18 @@ export default function ActiveCodes() {
   };
 
   // ---------- QR-CODE-STYLING PREVIEW ----------
-  const qrData = getContentForType() || "https://example.com";
+  // For dynamic QRs, always use the redirect URL, not the actual content
+  const getQRData = (): string => {
+    if (mode === "dynamic" && editingId) {
+      // If editing a dynamic QR, use its redirect URL
+      const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+      return `${baseUrl}/qr/${editingId}`;
+    }
+    // For static QRs or new dynamic QRs (no ID yet), use the actual content
+    return getContentForType() || "https://example.com";
+  };
+  
+  const qrData = getQRData();
 
   const buildDotsOptions = (pattern: PatternStyle, color: string) => {
     switch (pattern) {
@@ -1161,8 +1172,8 @@ export default function ActiveCodes() {
       image: finalLogoImage,
       imageOptions: {
         crossOrigin: "anonymous",
-        margin: finalLogoImage ? 6 : 0,
-        imageSize: finalLogoImage ? 0.28 : 0,
+        margin: finalLogoImage ? 12 : 0,
+        imageSize: finalLogoImage ? 0.15 : 0, // Max 15% of QR size to ensure scannability
         hideBackgroundDots: !!finalLogoImage,
       },
       margin: 0,
@@ -1203,6 +1214,11 @@ export default function ActiveCodes() {
   const handleDownload = async () => {
     const saved = await saveQRCodeToFirestore();
     if (!saved) return;
+
+    // Update editingId if this was a new QR code
+    if (!editingId && saved.id) {
+      setEditingId(saved.id);
+    }
 
     const safeName = (qrTitle || `${selectedType}-qr`).replace(/\s+/g, "-");
 
@@ -2390,13 +2406,14 @@ export default function ActiveCodes() {
                         ? "text-xs px-2.5 py-1.5"
                         : "text-[10px] px-2 py-1"
                     } bg-white rounded flex items-center gap-1 shadow-sm z-10`}
-                    style={{ opacity: watermarkSettings!.opacity }}
+                    style={{ opacity: watermarkSettings!.opacity, maxWidth: '20%', maxHeight: '10%' }}
                   >
                     {watermarkSettings!.logoUrl && (
                       <img
                         src={watermarkSettings!.logoUrl}
                         alt="watermark"
-                        className="h-3 w-auto object-contain"
+                        className="h-2 w-auto object-contain"
+                        style={{ maxWidth: '24px', maxHeight: '24px' }}
                         crossOrigin="anonymous"
                       />
                     )}
