@@ -140,18 +140,50 @@ export default function AdminSettingsPage() {
             </div>
 
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700">Watermark Logo URL</label>
+              <label className="block text-sm font-medium text-gray-700">Watermark Logo</label>
               <input
-                type="text"
-                value={settings.watermark.logoUrl}
-                onChange={(e) => setSettings({
-                  ...settings,
-                  watermark: { ...settings.watermark, logoUrl: e.target.value }
-                })}
-                placeholder="https://example.com/logo.png"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                type="file"
+                accept="image/png,image/jpeg,image/jpg"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  
+                  // Validate file type
+                  if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
+                    alert('Please upload PNG or JPEG images only');
+                    e.target.value = '';
+                    return;
+                  }
+                  
+                  // Convert to base64 for storage
+                  const reader = new FileReader();
+                  reader.onload = (event) => {
+                    const dataUrl = event.target?.result as string;
+                    setSettings({
+                      ...settings,
+                      watermark: { ...settings.watermark, logoUrl: dataUrl }
+                    });
+                  };
+                  reader.readAsDataURL(file);
+                }}
+                className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
-              <p className="mt-1 text-xs text-gray-500">Leave empty to use text watermark only</p>
+              <p className="mt-1 text-xs text-gray-500">Upload PNG or JPEG only. Leave empty for text watermark only.</p>
+              {settings.watermark.logoUrl && (
+                <div className="mt-2 flex items-center gap-2">
+                  <img src={settings.watermark.logoUrl} alt="Watermark preview" className="h-8 w-auto" />
+                  <button
+                    type="button"
+                    onClick={() => setSettings({
+                      ...settings,
+                      watermark: { ...settings.watermark, logoUrl: '' }
+                    })}
+                    className="text-xs text-red-600 hover:text-red-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
             </div>
 
             <div>

@@ -494,19 +494,32 @@ export default function ActiveCodes() {
 
     const isPng =
       file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+    const isJpeg =
+      file.type === "image/jpeg" || file.type === "image/jpg" ||
+      file.name.toLowerCase().endsWith(".jpg") || file.name.toLowerCase().endsWith(".jpeg");
     const isSvg =
       file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
 
-    if (!isPng && !isSvg) {
-      alert("Please upload only PNG or SVG.");
+    if (!isPng && !isJpeg && !isSvg) {
+      alert("Please upload PNG, JPEG, or SVG images only.");
       return;
     }
 
     try {
       const dataUrl = await fileToDataUrl(file);
-      setUploadedLogoDataUrl(dataUrl);
-      setUploadedLogoName(file.name);
-      setLogoPreset(null);
+      
+      // Load image to get actual dimensions
+      const img = new Image();
+      img.onload = () => {
+        const width = img.width;
+        const height = img.height;
+        console.log(`Logo dimensions: ${width}x${height}`);
+        
+        setUploadedLogoDataUrl(dataUrl);
+        setUploadedLogoName(file.name);
+        setLogoPreset(null);
+      };
+      img.src = dataUrl;
     } catch (e) {
       console.error(e);
       alert("Logo upload failed. Try another file.");
@@ -1161,6 +1174,49 @@ export default function ActiveCodes() {
     const presetImage = getLogoPresetDataUrl(logoPreset, fgColor);
     const finalLogoImage = uploadedLogoDataUrl || presetImage;
 
+    // Calculate optimal logo size based on image dimensions for scannability
+    let logoSize = 0;
+    let logoMargin = 0;
+    
+    if (finalLogoImage) {
+      // Load image to check dimensions
+      const img = new Image();
+      img.src = finalLogoImage;
+      
+      // For scannability, logo should be dynamically sized
+      // Smaller logos can be slightly larger, larger logos must be smaller
+      img.onload = () => {
+        const maxDimension = Math.max(img.width || 100, img.height || 100);
+        
+        if (maxDimension < 100) {
+          logoSize = 0.20; // 20% for small logos
+          logoMargin = 8;
+        } else if (maxDimension < 200) {
+          logoSize = 0.15; // 15% for medium logos
+          logoMargin = 10;
+        } else {
+          logoSize = 0.12; // 12% for large logos to ensure scannability
+          logoMargin = 12;
+        }
+        
+        // Update QR after calculating logo size
+        if (qrPreviewInstanceRef.current) {
+          qrPreviewInstanceRef.current.update({
+            imageOptions: {
+              crossOrigin: "anonymous",
+              margin: logoMargin,
+              imageSize: logoSize,
+              hideBackgroundDots: true,
+            },
+          });
+        }
+      };
+      
+      // Set default values immediately
+      logoSize = 0.15;
+      logoMargin = 10;
+    }
+
     const options: any = {
       width: size,
       height: size,
@@ -1172,8 +1228,8 @@ export default function ActiveCodes() {
       image: finalLogoImage,
       imageOptions: {
         crossOrigin: "anonymous",
-        margin: finalLogoImage ? 12 : 0,
-        imageSize: finalLogoImage ? 0.15 : 0, // Max 15% of QR size to ensure scannability
+        margin: logoMargin,
+        imageSize: logoSize,
         hideBackgroundDots: !!finalLogoImage,
       },
       margin: 0,

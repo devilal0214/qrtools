@@ -238,50 +238,34 @@ export function usePlanFeatures(): PlanFeatures {
     }
 
     const createdDate = new Date(planData.createdAt);
-    // Normalize to start of day for signup date
-    const signupDay = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate());
+    
+    // Calculate trial end date: registration date + trialDays
+    // Example: Registered Dec 15 + 14 days = Trial ends Dec 29 at 23:59:59
+    const trialEndDate = new Date(createdDate);
+    trialEndDate.setDate(createdDate.getDate() + trialDays);
+    trialEndDate.setHours(23, 59, 59, 999); // End of day
+    
+    // Current date and time
+    const now = new Date();
+    
+    // Calculate days remaining from NOW to trial end
+    const timeRemaining = trialEndDate.getTime() - now.getTime();
+    const daysRemaining = Math.ceil(timeRemaining / (1000 * 60 * 60 * 24));
     
     // Debug logging
-    console.log('Trial Calculation Debug:', {
-      rawCreatedAt: planData.createdAt,
-      parsedDate: createdDate.toISOString(),
-      signupDay: signupDay.toISOString(),
+    console.log('Trial Calculation:', {
+      registrationDate: createdDate.toISOString(),
       trialDays,
-      today: new Date().toISOString()
-    });
-    
-    // Calculate trial end date: signup day + (trialDays - 1) days
-    // Because signup day = day 1, so for 14-day trial, day 14 is signup + 13 days
-    const trialEndDate = new Date(signupDay);
-    trialEndDate.setDate(signupDay.getDate() + (trialDays - 1));
-    
-    // Set to end of day for trial end date (23:59:59)
-    trialEndDate.setHours(23, 59, 59, 999);
-    
-    // Get current date at start of day (00:00:00)
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endDay = new Date(trialEndDate.getFullYear(), trialEndDate.getMonth(), trialEndDate.getDate());
-    
-    // Calculate days remaining: count from today through end date (inclusive)
-    // If today = Dec 19 and endDay = Dec 27, we want: 19,20,21,22,23,24,25,26,27 = 9 days
-    const diffTime = endDay.getTime() - today.getTime();
-    const daysDiff = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    const daysRemaining = Math.max(0, daysDiff + 1); // +1 to include the end day itself
-
-    console.log('Trial End Calculation:', {
       trialEndDate: trialEndDate.toISOString(),
-      endDay: endDay.toISOString(),
-      today: today.toISOString(),
-      diffTime,
-      daysDiff,
-      daysRemaining
+      now: now.toISOString(),
+      timeRemaining,
+      daysRemaining: Math.max(0, daysRemaining)
     });
 
-    // Trial is active only if days remaining > 0
+    // Trial is active if we haven't passed the end date
     return {
       isActive: daysRemaining > 0,
-      daysRemaining,
+      daysRemaining: Math.max(0, daysRemaining),
       endsAt: trialEndDate
     };
   };
@@ -350,7 +334,7 @@ export function usePlanFeatures(): PlanFeatures {
     isTrialActive: trialStatus.isActive,
     trialDaysRemaining: trialStatus.daysRemaining,
     trialEndsAt: trialStatus.endsAt,
-    canCreateMoreQR: () => qrCount < qrLimit,
+    canCreateMoreQR: () => true, // Always allow on frontend, limits enforced in dashboard
     canUseFeature: (feature: string) => {
       const features = buildFeatures();
       // If feature is in plan features, use that value

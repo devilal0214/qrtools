@@ -244,10 +244,23 @@ export default function FlipbookViewer() {
               <div className={`page bg-white ${
                 currentPage === 1 ? 'active' : currentPage > 1 ? 'prev' : 'next'
               }`}>
-                <iframe
-                  src={`${flipbook.pdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-                  title={flipbook.title}
-                />
+                {currentPage === 1 && (
+                  <object
+                    data={flipbook.pdfUrl}
+                    type="application/pdf"
+                    width="100%"
+                    height="100%"
+                    style={{ border: 'none' }}
+                  >
+                    <iframe
+                      src={`https://docs.google.com/viewer?url=${encodeURIComponent(flipbook.pdfUrl)}&embedded=true`}
+                      width="100%"
+                      height="100%"
+                      style={{ border: 'none' }}
+                      title={flipbook.title}
+                    />
+                  </object>
+                )}
               </div>
 
               {/* Page 2 - Back Cover */}

@@ -1147,9 +1147,16 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const allowedTypes = ["image/png", "image/svg+xml"];
+    const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml"];
     if (!allowedTypes.includes(file.type)) {
-      setError("Please upload logo in SVG or PNG format only.");
+      setError("Please upload logo in PNG, JPEG, or SVG format only.");
+      return;
+    }
+
+    // Check file size (max 2MB for logos)
+    const maxSize = 2 * 1024 * 1024; // 2MB
+    if (file.size > maxSize) {
+      setError("Logo file size must be less than 2MB.");
       return;
     }
 
@@ -1212,11 +1219,35 @@ export default function Home() {
             "Failed to process SVG logo. Please use a PNG or try a different SVG."
           );
         });
-    } else {
+    } else if (file.type === "image/png" || file.type === "image/jpeg" || file.type === "image/jpg") {
+      // For PNG/JPEG, validate image dimensions and resize if needed
       const reader = new FileReader();
       reader.onload = () => {
-        setLogoImage(reader.result as string);
-        setLogoPreset(null);
+        const img = new Image();
+        img.onload = () => {
+          // Check if logo is too large - resize to max 256x256 for QR scannability
+          const maxLogoSize = 256;
+          if (img.width > maxLogoSize || img.height > maxLogoSize) {
+            const canvas = document.createElement("canvas");
+            const ratio = Math.min(maxLogoSize / img.width, maxLogoSize / img.height);
+            canvas.width = img.width * ratio;
+            canvas.height = img.height * ratio;
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const resizedDataUrl = canvas.toDataURL("image/png");
+              setLogoImage(resizedDataUrl);
+              setLogoPreset(null);
+            }
+          } else {
+            setLogoImage(reader.result as string);
+            setLogoPreset(null);
+          }
+        };
+        img.onerror = () => {
+          setError("Failed to load image. Please try another file.");
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -1496,13 +1527,8 @@ export default function Home() {
       return;
     }
 
-    if (!canCreateMoreQR()) {
-      setError(
-        `You've reached your daily limit of ${qrLimit} QR codes. Please upgrade your plan to create more.`
-      );
-      router.push("/dashboard/plans");
-      return;
-    }
+    // Allow saving QR codes - limits will be enforced by the backend/dashboard
+    // Frontend should always allow generating and downloading QR codes
 
     if (contentType === ContentTypes.SOCIALS) {
       try {
